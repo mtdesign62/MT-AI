@@ -1,0 +1,11 @@
+Pillow>=10.4
+numpy>=1.26
+opencv-python-headless>=4.10
+pydantic>=2.9
+psutil>=6.0
+packaging>=24.1
+huggingface-hub>=0.27
+transformers>=5.17
+accelerate>=1.2
+safetensors>=0.4.5
+diffusers @ git+https://github.com/huggingface/diffusers.git@e0118ade2f60234c41bacf40330a7e2f61108849
