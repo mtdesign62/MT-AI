@@ -2,6 +2,6 @@ torch>=2.4.0
 transformers>=5.17
 accelerate>=1.2
 safetensors>=0.4.5
-# Qwen Image 2.1 currently requires a Diffusers build containing QwenImage21Pipeline.
-# Prefer a released version once available in your environment; otherwise install main.
-diffusers>=0.37.0
+# Qwen Image 2.1 support is not yet present in the current PyPI Diffusers release.
+# Pin an exact upstream revision known to contain QwenImage21Pipeline so installs are reproducible.
+diffusers @ git+https://github.com/huggingface/diffusers.git@e0118ade2f60234c41bacf40330a7e2f61108849

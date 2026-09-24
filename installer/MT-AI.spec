@@ -1,5 +1,10 @@
-# PyInstaller skeleton. Validate on Windows after the CUDA/Qwen environment is proven.
+from pathlib import Path
+
 from PyInstaller.utils.hooks import collect_all
+
+# PyInstaller evaluates relative script paths from the .spec directory.
+# Resolve the repository root explicitly so CI and local Windows builds behave the same.
+project_root = Path(SPECPATH).resolve().parent
 
 hiddenimports = []
 datas = []
@@ -14,8 +19,8 @@ for pkg in ["huggingface_hub", "transformers", "diffusers"]:
         pass
 
 a = Analysis(
-    ["mt_ai/app.py"],
-    pathex=["."],
+    [str(project_root / "mt_ai" / "app.py")],
+    pathex=[str(project_root)],
     binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,
