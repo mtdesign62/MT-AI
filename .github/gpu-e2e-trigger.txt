@@ -1,2 +1,3 @@
 Trigger real Qwen Image 2.1 GPU E2E validation on the connected self-hosted NVIDIA runner.
 Retry 2: Windows PowerShell compatibility fix.
+Retry 3: minimal GPU-only dependency install.
