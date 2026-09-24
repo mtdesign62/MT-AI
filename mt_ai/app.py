@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import sys
+import traceback
+from pathlib import Path
 
 from mt_ai.version import APP_NAME
 
@@ -17,6 +19,8 @@ QProgressBar { border: 1px solid #343d49; border-radius: 4px; text-align: center
 QProgressBar::chunk { background: #4e8cff; }
 """
 
+SELF_TEST_REPORT = Path("mt_ai_ai_self_test_report.txt")
+
 
 def ai_runtime_self_test() -> int:
     """Packaging smoke test: verify the frozen app contains the local Qwen runtime."""
@@ -28,8 +32,21 @@ def ai_runtime_self_test() -> int:
         import transformers  # noqa: F401
 
         if not hasattr(diffusers, "QwenImage21Pipeline"):
+            SELF_TEST_REPORT.write_text(
+                "QwenImage21Pipeline is missing from packaged Diffusers.\n",
+                encoding="utf-8",
+            )
             return 4
+
+        SELF_TEST_REPORT.write_text(
+            "PASS\n"
+            f"diffusers={getattr(diffusers, '__version__', 'unknown')}\n"
+            f"transformers={getattr(transformers, '__version__', 'unknown')}\n"
+            f"torch={getattr(torch, '__version__', 'unknown')}\n",
+            encoding="utf-8",
+        )
     except Exception:
+        SELF_TEST_REPORT.write_text(traceback.format_exc(), encoding="utf-8")
         return 3
     return 0
 
