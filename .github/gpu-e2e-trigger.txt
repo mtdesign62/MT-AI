@@ -1,3 +1,4 @@
 Trigger real Qwen Image 2.1 GPU E2E validation on the connected self-hosted NVIDIA runner.
 Retry 2: Windows PowerShell compatibility fix.
 Retry 3: minimal GPU-only dependency install.
+Retry 4: install NumPy before CUDA Torch probe.
