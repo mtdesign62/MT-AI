@@ -1,0 +1,123 @@
+name: gpu-e2e
+
+on:
+  push:
+    paths:
+      - "scripts/gpu_e2e.py"
+      - ".github/workflows/gpu-e2e.yml"
+  workflow_dispatch:
+    inputs:
+      run_gpu:
+        description: "Run the real Qwen render job on a connected self-hosted NVIDIA runner"
+        required: true
+        type: boolean
+        default: false
+      steps:
+        description: "Qwen inference steps"
+        required: true
+        default: "20"
+      min_fidelity:
+        description: "Minimum Structural Fidelity (0 disables hard threshold for first baseline)"
+        required: true
+        default: "0"
+      torch_index_url:
+        description: "PyTorch CUDA wheel index for the self-hosted runner"
+        required: true
+        default: "https://download.pytorch.org/whl/cu128"
+
+jobs:
+  harness-smoke:
+    name: Validate GPU E2E harness on Windows VM
+    runs-on: windows-latest
+    timeout-minutes: 20
+    env:
+      PYTHONPATH: .
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install lightweight test dependencies
+        run: |
+          python -m pip install -U pip
+          pip install -r requirements/base.txt
+
+      - name: Compile harness
+        run: python -m compileall -q mt_ai scripts/gpu_e2e.py
+
+      - name: Prepare deterministic architectural scene and prompt
+        run: |
+          python scripts/gpu_e2e.py --prepare-only --output-dir gpu_e2e_artifacts
+
+      - name: Verify harness artifacts
+        shell: pwsh
+        run: |
+          if (-not (Test-Path ".\\gpu_e2e_artifacts\\source.png")) { throw "source.png missing" }
+          if (-not (Test-Path ".\\gpu_e2e_artifacts\\prompt.txt")) { throw "prompt.txt missing" }
+          if (-not (Test-Path ".\\gpu_e2e_artifacts\\report.json")) { throw "report.json missing" }
+          Get-Content ".\\gpu_e2e_artifacts\\report.json"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gpu-e2e-harness-${{ github.sha }}
+          path: gpu_e2e_artifacts/
+          if-no-files-found: error
+
+  gpu-render:
+    name: Real Qwen Image 2.1 NVIDIA render
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_gpu }}
+    runs-on: [self-hosted, gpu, nvidia]
+    timeout-minutes: 240
+    env:
+      PYTHONPATH: .
+      HF_HUB_ENABLE_HF_TRANSFER: "0"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Show NVIDIA hardware
+        shell: pwsh
+        run: |
+          nvidia-smi
+          Get-CimInstance Win32_ComputerSystem | Select-Object TotalPhysicalMemory
+
+      - name: Install CUDA PyTorch
+        shell: pwsh
+        run: |
+          python -m pip install -U pip
+          pip install --upgrade torch --index-url "${{ inputs.torch_index_url }}"
+          python -c "import torch; print('torch=', torch.__version__); print('cuda=', torch.version.cuda); print('gpu=', torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'NONE'); assert torch.cuda.is_available(), 'CUDA PyTorch is required'"
+
+      - name: Install MT AI and Qwen runtime dependencies
+        shell: pwsh
+        run: |
+          pip install -r requirements/base.txt
+          pip install -r requirements/ai.txt
+          python -c "import diffusers; assert hasattr(diffusers, 'QwenImage21Pipeline'); print('QwenImage21Pipeline=', diffusers.QwenImage21Pipeline)"
+
+      - name: Run real Qwen Image 2.1 edit
+        shell: pwsh
+        run: |
+          python scripts/gpu_e2e.py --output-dir gpu_e2e_artifacts --steps "${{ inputs.steps }}" --memory-profile low-memory --min-fidelity "${{ inputs.min_fidelity }}"
+
+      - name: Print report
+        if: always()
+        shell: pwsh
+        run: |
+          if (Test-Path ".\\gpu_e2e_artifacts\\report.json") {
+            Get-Content ".\\gpu_e2e_artifacts\\report.json"
+          }
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: qwen-gpu-e2e-${{ github.sha }}
+          path: gpu_e2e_artifacts/
+          if-no-files-found: warn
