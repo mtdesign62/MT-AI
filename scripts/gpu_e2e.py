@@ -6,6 +6,25 @@ import os
 import platform
 import sys
 import time
+import ssl
+import tempfile
+
+# On Windows, Python HTTP clients can miss roots that are trusted by the OS.
+# Build a temporary CA bundle from certifi plus the Windows ROOT store.
+if sys.platform == "win32":
+    try:
+        import certifi
+        pem_path = Path(tempfile.gettempdir()) / "mt_ai_windows_ca_bundle.pem"
+        with open(certifi.where(), "rb") as src, open(pem_path, "wb") as dst:
+            dst.write(src.read())
+            dst.write(b"\n")
+            for cert_bytes, encoding, _trust in ssl.enum_certificates("ROOT"):
+                if encoding == "x509_asn":
+                    dst.write(ssl.DER_cert_to_PEM_cert(cert_bytes).encode("ascii"))
+        os.environ["SSL_CERT_FILE"] = str(pem_path)
+    except Exception as exc:
+        print(f"Windows CA bundle setup warning: {exc}", file=sys.stderr)
+
 from dataclasses import asdict
 from pathlib import Path
 
