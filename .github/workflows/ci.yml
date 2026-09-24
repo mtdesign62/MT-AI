@@ -41,26 +41,9 @@ jobs:
         run: |
           python -c "from mt_ai.app import main; from mt_ai.ui.main_window import MainWindow; print('MT AI GUI imports OK')"
 
-      - name: Build packaged Windows executable
-        run: pyinstaller --clean --noconfirm installer\MT-AI.spec
-
-      - name: Smoke launch packaged executable
-        shell: pwsh
-        run: |
-          if (-not (Test-Path ".\dist\MT-AI.exe")) {
-            throw "Packaged executable was not created"
-          }
-          $proc = Start-Process -FilePath ".\dist\MT-AI.exe" -PassThru
-          Start-Sleep -Seconds 5
-          if ($proc.HasExited) {
-            throw "MT-AI.exe exited unexpectedly with code $($proc.ExitCode)"
-          }
-          Stop-Process -Id $proc.Id -Force
-          Write-Host "Packaged MT-AI.exe launch smoke passed"
-
   qwen-api-smoke:
     runs-on: windows-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
     env:
       PYTHONPATH: .
 
@@ -90,3 +73,55 @@ jobs:
       - name: Verify MT AI compatibility preflight
         run: |
           python -c "from mt_ai.models.provider import HuggingFaceQwenProvider; state, reason = HuggingFaceQwenProvider._compatibility('QwenImage21Pipeline'); print(state, reason); assert state == 'compatible'"
+
+  full-package-smoke:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    env:
+      PYTHONPATH: .
+      QT_QPA_PLATFORM: offscreen
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Upgrade pip
+        run: python -m pip install -U pip
+
+      - name: Install complete MT AI build environment
+        run: |
+          pip install -r requirements/base.txt
+          pip install -r requirements/ai.txt
+          pip install -r requirements/dev.txt
+
+      - name: Verify source AI self-test
+        run: python -m mt_ai.app --self-test-ai
+
+      - name: Build full Windows executable with AI runtime
+        run: pyinstaller --clean --noconfirm installer\MT-AI.spec
+
+      - name: Verify frozen executable contains Qwen runtime
+        shell: pwsh
+        run: |
+          if (-not (Test-Path ".\dist\MT-AI.exe")) {
+            throw "MT-AI.exe was not created"
+          }
+          $probe = Start-Process -FilePath ".\dist\MT-AI.exe" -ArgumentList "--self-test-ai" -Wait -PassThru
+          if ($probe.ExitCode -ne 0) {
+            throw "Frozen AI runtime self-test failed with exit code $($probe.ExitCode)"
+          }
+          Write-Host "Frozen Qwen runtime self-test passed"
+
+      - name: Smoke launch full packaged GUI
+        shell: pwsh
+        run: |
+          $proc = Start-Process -FilePath ".\dist\MT-AI.exe" -PassThru
+          Start-Sleep -Seconds 8
+          if ($proc.HasExited) {
+            throw "Full MT-AI.exe exited unexpectedly with code $($proc.ExitCode)"
+          }
+          Stop-Process -Id $proc.Id -Force
+          Write-Host "Full packaged MT-AI.exe GUI launch smoke passed"

@@ -2,14 +2,22 @@ from pathlib import Path
 
 from PyInstaller.utils.hooks import collect_all
 
-# PyInstaller evaluates relative script paths from the .spec directory.
-# Resolve the repository root explicitly so CI and local Windows builds behave the same.
 project_root = Path(SPECPATH).resolve().parent
 
 hiddenimports = []
 datas = []
 binaries = []
-for pkg in ["huggingface_hub", "transformers", "diffusers"]:
+
+# The local-Qwen runtime must be part of the packaged application.
+# Model weights stay separate and are downloaded by Model Manager.
+for pkg in [
+    "huggingface_hub",
+    "torch",
+    "transformers",
+    "accelerate",
+    "safetensors",
+    "diffusers",
+]:
     try:
         d, b, h = collect_all(pkg)
         datas += d

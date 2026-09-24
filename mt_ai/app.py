@@ -18,7 +18,26 @@ QProgressBar::chunk { background: #4e8cff; }
 """
 
 
+def ai_runtime_self_test() -> int:
+    """Packaging smoke test: verify the frozen app contains the local Qwen runtime."""
+    try:
+        import accelerate  # noqa: F401
+        import diffusers
+        import safetensors  # noqa: F401
+        import torch  # noqa: F401
+        import transformers  # noqa: F401
+
+        if not hasattr(diffusers, "QwenImage21Pipeline"):
+            return 4
+    except Exception:
+        return 3
+    return 0
+
+
 def main() -> int:
+    if "--self-test-ai" in sys.argv:
+        return ai_runtime_self_test()
+
     try:
         from PySide6.QtWidgets import QApplication
         from mt_ai.ui.main_window import MainWindow
@@ -26,6 +45,7 @@ def main() -> int:
         print("MT AI GUI requires PySide6. Install requirements/base.txt", file=sys.stderr)
         print(exc, file=sys.stderr)
         return 2
+
     app = QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
     app.setStyleSheet(DARK_STYLE)
