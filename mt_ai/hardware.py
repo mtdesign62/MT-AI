@@ -1,0 +1,80 @@
+from __future__ import annotations
+
+import json
+import platform
+import shutil
+from dataclasses import asdict, dataclass
+from pathlib import Path
+
+import psutil
+
+
+@dataclass(frozen=True)
+class HardwareProfile:
+    os: str
+    python: str
+    cpu: str
+    ram_total_mb: int
+    disk_free_mb: int
+    cuda_available: bool
+    cuda_version: str | None
+    gpu_name: str | None
+    vram_total_mb: int | None
+    vram_free_mb: int | None
+    recommended_profile: str
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+    def to_json(self) -> str:
+        return json.dumps(self.to_dict(), ensure_ascii=False, indent=2)
+
+
+def detect_hardware(path_for_disk: Path | None = None) -> HardwareProfile:
+    cuda_available = False
+    cuda_version = None
+    gpu_name = None
+    vram_total = None
+    vram_free = None
+    try:
+        import torch
+
+        cuda_available = bool(torch.cuda.is_available())
+        cuda_version = getattr(torch.version, "cuda", None)
+        if cuda_available:
+            gpu_name = torch.cuda.get_device_name(0)
+            free, total = torch.cuda.mem_get_info(0)
+            vram_free = int(free / 1024 / 1024)
+            vram_total = int(total / 1024 / 1024)
+    except Exception:
+        pass
+
+    ram_total = int(psutil.virtual_memory().total / 1024 / 1024)
+    disk_root = path_for_disk or Path.home()
+    try:
+        disk_free = int(shutil.disk_usage(disk_root).free / 1024 / 1024)
+    except OSError:
+        disk_free = 0
+
+    if not cuda_available:
+        recommended = "unsupported"
+    elif (vram_total or 0) >= 22000:
+        recommended = "quality"
+    elif (vram_total or 0) >= 14000:
+        recommended = "balanced"
+    else:
+        recommended = "low-memory"
+
+    return HardwareProfile(
+        os=f"{platform.system()} {platform.release()}",
+        python=platform.python_version(),
+        cpu=platform.processor() or platform.machine(),
+        ram_total_mb=ram_total,
+        disk_free_mb=disk_free,
+        cuda_available=cuda_available,
+        cuda_version=cuda_version,
+        gpu_name=gpu_name,
+        vram_total_mb=vram_total,
+        vram_free_mb=vram_free,
+        recommended_profile=recommended,
+    )

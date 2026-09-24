@@ -1,0 +1,7 @@
+torch>=2.4.0
+transformers>=5.17
+accelerate>=1.2
+safetensors>=0.4.5
+# Qwen Image 2.1 currently requires a Diffusers build containing QwenImage21Pipeline.
+# Prefer a released version once available in your environment; otherwise install main.
+diffusers>=0.37.0

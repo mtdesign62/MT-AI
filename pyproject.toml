@@ -1,0 +1,54 @@
+[build-system]
+requires = ["setuptools>=75", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mt-ai-renderer"
+version = "0.1.0"
+description = "Local-first AI architectural renderer powered by Qwen Image"
+readme = "README.md"
+requires-python = ">=3.11,<3.13"
+authors = [{name = "MT Design"}]
+dependencies = [
+  "Pillow>=10.4",
+  "numpy>=1.26",
+  "opencv-python>=4.10",
+  "pydantic>=2.9",
+  "psutil>=6.0",
+  "packaging>=24.1",
+  "huggingface-hub>=0.27",
+]
+
+[project.optional-dependencies]
+gui = ["PySide6>=6.8"]
+ai = [
+  "torch>=2.4.0",
+  "transformers>=5.17",
+  "accelerate>=1.2",
+  "safetensors>=0.4.5",
+  "diffusers>=0.37.0",
+]
+dev = ["pytest>=8.3", "ruff>=0.8"]
+
+[project.scripts]
+mt-ai = "mt_ai.app:main"
+mt-ai-cli = "mt_ai.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["mt_ai*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+markers = [
+  "gpu: tests requiring an NVIDIA CUDA GPU",
+  "network: tests requiring internet access",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = ["E501"]
