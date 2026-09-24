@@ -8,7 +8,7 @@ on:
 jobs:
   windows-smoke:
     runs-on: windows-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     env:
       PYTHONPATH: .
       QT_QPA_PLATFORM: offscreen
@@ -40,3 +40,53 @@ jobs:
       - name: Verify application entrypoint imports
         run: |
           python -c "from mt_ai.app import main; from mt_ai.ui.main_window import MainWindow; print('MT AI GUI imports OK')"
+
+      - name: Build packaged Windows executable
+        run: pyinstaller --clean --noconfirm installer\MT-AI.spec
+
+      - name: Smoke launch packaged executable
+        shell: pwsh
+        run: |
+          if (-not (Test-Path ".\dist\MT-AI.exe")) {
+            throw "Packaged executable was not created"
+          }
+          $proc = Start-Process -FilePath ".\dist\MT-AI.exe" -PassThru
+          Start-Sleep -Seconds 5
+          if ($proc.HasExited) {
+            throw "MT-AI.exe exited unexpectedly with code $($proc.ExitCode)"
+          }
+          Stop-Process -Id $proc.Id -Force
+          Write-Host "Packaged MT-AI.exe launch smoke passed"
+
+  qwen-api-smoke:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    env:
+      PYTHONPATH: .
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Upgrade pip
+        run: python -m pip install -U pip
+
+      - name: Install AI runtime dependencies
+        run: |
+          pip install packaging huggingface-hub
+          pip install -r requirements/ai.txt
+
+      - name: Verify Qwen Image 2.1 Diffusers pipeline is available
+        run: |
+          python -c "import diffusers; print('diffusers', diffusers.__version__); assert hasattr(diffusers, 'QwenImage21Pipeline'), 'QwenImage21Pipeline missing from installed Diffusers'; print('QwenImage21Pipeline available')"
+
+      - name: Verify official Qwen Image 2.1 model metadata
+        run: |
+          python -c "import json; from pathlib import Path; from huggingface_hub import hf_hub_download; p=hf_hub_download('Qwen/Qwen-Image-2.1', 'model_index.json'); d=json.loads(Path(p).read_text(encoding='utf-8')); print('remote pipeline:', d.get('_class_name')); assert d.get('_class_name') == 'QwenImage21Pipeline'"
+
+      - name: Verify MT AI compatibility preflight
+        run: |
+          python -c "from mt_ai.models.provider import HuggingFaceQwenProvider; state, reason = HuggingFaceQwenProvider._compatibility('QwenImage21Pipeline'); print(state, reason); assert state == 'compatible'"
