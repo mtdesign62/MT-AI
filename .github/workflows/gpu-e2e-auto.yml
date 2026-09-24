@@ -13,6 +13,7 @@ jobs:
     env:
       PYTHONPATH: .
       HF_HUB_ENABLE_HF_TRANSFER: "0"
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
 
     steps:
       - uses: actions/checkout@v4
@@ -27,18 +28,19 @@ jobs:
           nvidia-smi
           Get-CimInstance Win32_ComputerSystem | Select-Object TotalPhysicalMemory
 
-      - name: Install CUDA PyTorch for Blackwell-capable Windows
+      - name: Reuse or install CUDA PyTorch
         shell: powershell
         run: |
-          python -m pip install -U pip
-          pip install --upgrade torch --index-url https://download.pytorch.org/whl/cu128
-          python -c "import torch; print('torch=', torch.__version__); print('cuda=', torch.version.cuda); print('gpu=', torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'NONE'); print('capability=', torch.cuda.get_device_capability(0) if torch.cuda.is_available() else 'NONE'); assert torch.cuda.is_available(), 'CUDA PyTorch is required'"
+          $ok = python -c "import torch,sys; sys.exit(0 if torch.cuda.is_available() else 1)" 2>$null
+          if ($LASTEXITCODE -ne 0) {
+            python -m pip install torch --index-url https://download.pytorch.org/whl/cu128
+          }
+          python -c "import torch; print('torch=', torch.__version__); print('cuda=', torch.version.cuda); print('gpu=', torch.cuda.get_device_name(0)); print('capability=', torch.cuda.get_device_capability(0)); assert torch.cuda.is_available()"
 
-      - name: Install MT AI and Qwen runtime dependencies
+      - name: Install minimal MT AI GPU runtime
         shell: powershell
         run: |
-          pip install -r requirements/base.txt
-          pip install -r requirements/ai.txt
+          python -m pip install -r requirements/gpu-e2e.txt
           python -c "import diffusers; assert hasattr(diffusers, 'QwenImage21Pipeline'); print('QwenImage21Pipeline=', diffusers.QwenImage21Pipeline)"
 
       - name: Run real Qwen Image 2.1 edit
