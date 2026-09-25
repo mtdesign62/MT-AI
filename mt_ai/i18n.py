@@ -19,7 +19,7 @@ VI = {
     "Natural":"Tự nhiên","Morning":"Buổi sáng","Afternoon":"Buổi chiều","Golden hour":"Giờ vàng",
     "Blue hour":"Giờ xanh","Night":"Ban đêm","Soft cloudy":"Trời mây dịu","Warm luxury":"Ấm áp sang trọng",
     "Neutral studio":"Studio trung tính","MT AI — Model Manager":"MT AI — Quản lý mô hình",
-    "Installed Qwen Image models":"Các mô hình Qwen Image đã cài","Install Qwen Image 2.1":"Cài Qwen Image 2.1",
+    "Installed Qwen Image models":"Các mô hình Qwen Image đã cài","Import Existing Model":"Thêm model có sẵn","Install Qwen Image 2.1":"Cài Qwen Image 2.1",
     "Install Prompt Rewriter (optional)":"Cài bộ viết lại câu lệnh (tùy chọn)","Activate selected":"Kích hoạt mục đã chọn",
     "Rollback":"Quay lại phiên bản trước","Available official Qwen updates":"Bản cập nhật Qwen chính thức",
     "Check updates":"Kiểm tra cập nhật","Install selected update":"Cài bản cập nhật đã chọn","Ready":"Sẵn sàng",
