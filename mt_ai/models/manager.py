@@ -157,6 +157,37 @@ class ModelManager:
             progress("Download complete")
         return installed
 
+    def import_existing(self, source: str | Path) -> InstalledModel:
+        """Register an existing local Qwen Image 2.1 snapshot without copying it."""
+        path = Path(source).expanduser().resolve()
+        if not path.is_dir():
+            raise FileNotFoundError(str(path))
+        model_index = path / "model_index.json"
+        if not model_index.exists():
+            raise ValueError("Selected folder does not contain model_index.json")
+        try:
+            metadata = json.loads(model_index.read_text(encoding="utf-8"))
+        except Exception as exc:
+            raise ValueError(f"Invalid model_index.json: {exc}") from exc
+        pipeline_class = metadata.get("_class_name")
+        if pipeline_class != DEFAULT_IMAGE_MODEL.required_pipeline:
+            raise ValueError(
+                f"Expected {DEFAULT_IMAGE_MODEL.required_pipeline}, found {pipeline_class or 'unknown pipeline'}"
+            )
+        revision = path.name
+        installed = InstalledModel(
+            family=DEFAULT_IMAGE_MODEL.family,
+            repo_id=DEFAULT_IMAGE_MODEL.repo_id,
+            version=DEFAULT_IMAGE_MODEL.version,
+            revision=revision,
+            local_path=str(path),
+            pipeline_class=pipeline_class,
+            installed_at=datetime.now(timezone.utc).isoformat(),
+            compatibility="compatible",
+        )
+        self._write_manifest(installed)
+        return installed
+
     def activate(self, model: InstalledModel) -> None:
         if not model.path.exists():
             raise FileNotFoundError(model.local_path)
