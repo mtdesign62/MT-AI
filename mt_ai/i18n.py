@@ -23,7 +23,7 @@ VI = {
     "Install Prompt Rewriter (optional)":"Cài bộ viết lại câu lệnh (tùy chọn)","Activate selected":"Kích hoạt mục đã chọn",
     "Rollback":"Quay lại phiên bản trước","Available official Qwen updates":"Bản cập nhật Qwen chính thức",
     "Check updates":"Kiểm tra cập nhật","Install selected update":"Cài bản cập nhật đã chọn","Ready":"Sẵn sàng",
-    "Language":"Ngôn ngữ","English":"English","Vietnamese":"Tiếng Việt",
+    "Language":"Ngôn ngữ","English":"English","Vietnamese":"Tiếng Việt","PowerShell Download Guide":"Hướng dẫn tải bằng PowerShell",
 }
 
 def current_language() -> str:
