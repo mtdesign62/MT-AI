@@ -121,6 +121,14 @@ jobs:
           }
           Write-Host "Frozen Qwen runtime self-test passed"
 
+      - name: Upload Windows executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: MT-AI-Windows-${{ github.sha }}
+          path: dist/MT-AI.exe
+          if-no-files-found: error
+          retention-days: 30
+
       - name: Smoke launch full packaged GUI
         shell: pwsh
         run: |
