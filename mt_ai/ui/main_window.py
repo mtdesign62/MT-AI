@@ -119,7 +119,9 @@ class MainWindow(DropWindow):
         left_l = QVBoxLayout(left)
         left_l.addWidget(QLabel("RENDER"))
         self.mode_list = QListWidget()
-        self.mode_list.addItems(["Interior", "Architecture", "Landscape", "Masterplan", "Enhance", "Upscale"])
+        for key in ["Interior", "Architecture", "Landscape", "Masterplan", "Enhance", "Upscale"]:
+            self.mode_list.addItem(key)
+            self.mode_list.item(self.mode_list.count() - 1).setData(Qt.ItemDataRole.UserRole, key)
         self.mode_list.setCurrentRow(0)
         self.mode_list.currentTextChanged.connect(self._mode_changed)
         left_l.addWidget(self.mode_list)
@@ -200,17 +202,20 @@ class MainWindow(DropWindow):
         right_l.addWidget(protect)
         right_l.addWidget(QLabel("Quality"))
         self.quality = QComboBox()
-        self.quality.addItems(["Draft", "Standard", "High", "Ultra"])
-        self.quality.setCurrentText("Standard")
+        for key in ["Draft", "Standard", "High", "Ultra"]:
+            self.quality.addItem(key, key)
+        self.quality.setCurrentIndex(1)
         right_l.addWidget(self.quality)
         right_l.addWidget(QLabel("Output Resolution"))
         self.resolution = QComboBox()
-        self.resolution.addItems([
-            "Match source", "HD · 1280×720 (16:9)", "Full HD · 1920×1080 (16:9)",
-            "2K · 2560×1440 (16:9)", "4K · 3840×2160 (16:9)",
-            "Square · 1024×1024 (1:1)", "Portrait · 1080×1350 (4:5)",
-            "Story · 1080×1920 (9:16)", "Custom",
-        ])
+        for label, data in [
+            ("Match source", "source"), ("HD · 1280×720 (16:9)", (1280, 720)),
+            ("Full HD · 1920×1080 (16:9)", (1920, 1080)), ("2K · 2560×1440 (16:9)", (2560, 1440)),
+            ("4K · 3840×2160 (16:9)", (3840, 2160)), ("Square · 1024×1024 (1:1)", (1024, 1024)),
+            ("Portrait · 1080×1350 (4:5)", (1080, 1350)), ("Story · 1080×1920 (9:16)", (1080, 1920)),
+            ("Custom", "custom"),
+        ]:
+            self.resolution.addItem(label, data)
         right_l.addWidget(self.resolution)
         custom_row = QHBoxLayout()
         self.custom_width = QSpinBox(); self.custom_width.setRange(256, 8192); self.custom_width.setSingleStep(32); self.custom_width.setValue(1920)
@@ -218,7 +223,7 @@ class MainWindow(DropWindow):
         self.custom_width.setEnabled(False); self.custom_height.setEnabled(False)
         custom_row.addWidget(self.custom_width); custom_row.addWidget(QLabel("×")); custom_row.addWidget(self.custom_height)
         right_l.addLayout(custom_row)
-        self.resolution.currentTextChanged.connect(self._resolution_changed)
+        self.resolution.currentIndexChanged.connect(self._resolution_changed)
         right_l.addStretch(1)
         splitter.addWidget(right)
         splitter.setSizes([190, 950, 330])
@@ -320,28 +325,26 @@ class MainWindow(DropWindow):
         elif self.render_image is not None:
             self.canvas.set_image(self.render_image)
 
-    def _resolution_changed(self, value: str) -> None:
-        custom = value == "Custom"
+    def _resolution_changed(self, _value=None) -> None:
+        custom = self.resolution.currentData() == "custom"
         self.custom_width.setEnabled(custom)
         self.custom_height.setEnabled(custom)
 
     def _output_dimensions(self) -> tuple[int, int] | None:
-        value = self.resolution.currentText()
-        if value == "Match source":
+        value = self.resolution.currentData()
+        if value == "source":
             return self.source_image.size if self.source_image is not None else None
-        if value == "Custom":
+        if value == "custom":
             return self.custom_width.value(), self.custom_height.value()
-        presets = {
-            "HD · 1280×720 (16:9)": (1280, 720), "Full HD · 1920×1080 (16:9)": (1920, 1080),
-            "2K · 2560×1440 (16:9)": (2560, 1440), "4K · 3840×2160 (16:9)": (3840, 2160),
-            "Square · 1024×1024 (1:1)": (1024, 1024), "Portrait · 1080×1350 (4:5)": (1080, 1350),
-            "Story · 1080×1920 (9:16)": (1080, 1920),
-        }
-        return presets.get(value)
+        if isinstance(value, tuple) and len(value) == 2:
+            return int(value[0]), int(value[1])
+        return None
 
-    def _mode_changed(self, mode: str) -> None:
-        self.current_mode = mode
-        self.geometry.setValue(MODE_DEFAULTS.get(mode, 90))
+    def _mode_changed(self, _text: str) -> None:
+        item = self.mode_list.currentItem()
+        mode = item.data(Qt.ItemDataRole.UserRole) if item else "Interior"
+        self.current_mode = mode or "Interior"
+        self.geometry.setValue(MODE_DEFAULTS.get(self.current_mode, 90))
 
     def choose_image(self) -> None:
         path, _ = QFileDialog.getOpenFileName(self, "Open 3D viewport image", "", "Images (*.png *.jpg *.jpeg *.webp)")
@@ -460,7 +463,7 @@ class MainWindow(DropWindow):
         source = self.source_image.copy()
         prompt = self._full_prompt()
         self.render_cancel_event.clear()
-        quality = self.quality.currentText()
+        quality = self.quality.currentData() or "Standard"
         steps = {"Draft": 4, "Standard": 8, "High": 12, "Ultra": 20}.get(quality, 8)
         dimensions = self._output_dimensions()
         profile = hw.recommended_profile if hw.recommended_profile in {"quality", "balanced", "low-memory", "low-memory-12gb"} else "low-memory-12gb"
