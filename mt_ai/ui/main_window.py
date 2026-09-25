@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from threading import Event
 
 from PIL import Image
 from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, Signal, Slot
@@ -44,6 +45,7 @@ from .model_dialog import ModelManagerDialog
 class WorkerSignals(QObject):
     result = Signal(object)
     error = Signal(str)
+    progress = Signal(int, int)
     finished = Signal()
 
 
@@ -93,6 +95,8 @@ class MainWindow(DropWindow):
         self.source_path: Path | None = None
         self.scene_analysis = None
         self.current_mode = "Interior"
+        self.render_cancel_event = Event()
+        self.last_render_request: dict | None = None
         self._build_ui()
         self._build_menu()
         self._refresh_model_status()
@@ -198,14 +202,20 @@ class MainWindow(DropWindow):
         self.suggest_btn = QPushButton("Suggest Prompt")
         self.rewrite_btn = QPushButton("AI Rewrite Prompt")
         self.render_btn = QPushButton("RENDER")
+        self.cancel_btn = QPushButton("Cancel")
+        self.cancel_btn.setEnabled(False)
+        self.retry_btn = QPushButton("Retry")
+        self.retry_btn.setEnabled(False)
         self.save_btn = QPushButton("Save Result")
         self.open_btn.clicked.connect(self.choose_image)
         self.paste_btn.clicked.connect(self.paste_image)
         self.suggest_btn.clicked.connect(self.suggest_prompt)
         self.rewrite_btn.clicked.connect(self.rewrite_prompt)
         self.render_btn.clicked.connect(self.render)
+        self.cancel_btn.clicked.connect(self.cancel_render)
+        self.retry_btn.clicked.connect(self.render)
         self.save_btn.clicked.connect(self.save_result)
-        for b in (self.open_btn, self.paste_btn, self.suggest_btn, self.rewrite_btn, self.render_btn, self.save_btn):
+        for b in (self.open_btn, self.paste_btn, self.suggest_btn, self.rewrite_btn, self.render_btn, self.cancel_btn, self.retry_btn, self.save_btn):
             buttons.addWidget(b)
         prompt_l.addLayout(buttons)
         main.addWidget(prompt_box)
@@ -233,7 +243,10 @@ class MainWindow(DropWindow):
 
     def _set_busy(self, busy: bool, text: str = "") -> None:
         self.render_btn.setEnabled(not busy)
-        self.progress.setRange(0, 0 if busy else 1)
+        self.cancel_btn.setEnabled(busy)
+        if not busy:
+            self.progress.setRange(0, 1)
+            self.progress.setValue(0)
         if text:
             self.statusBar().showMessage(text)
 
@@ -365,26 +378,45 @@ class MainWindow(DropWindow):
             return
         source = self.source_image.copy()
         prompt = self._full_prompt()
+        self.render_cancel_event.clear()
         quality = self.quality.currentText()
+        steps = {"Draft": 4, "Standard": 8, "High": 12, "Ultra": 20}.get(quality, 8)
+        self.last_render_request = {"quality": quality, "steps": steps, "profile": hw.recommended_profile}
         profile = hw.recommended_profile if hw.recommended_profile in {"quality", "balanced", "low-memory"} else "low-memory"
 
         def job():
             result = QwenEngine(active).render(
-                RenderRequest(source=source, prompt=prompt, quality=quality, memory_profile=profile)
+                RenderRequest(source=source, prompt=prompt, quality=quality, steps=steps, memory_profile=profile),
+                cancel_check=self.render_cancel_event.is_set,
+                progress=lambda done, total: worker.signals.progress.emit(done, total),
             )
             fidelity = compare_source_and_render(source, result.image)
             return result, fidelity
 
         worker = FunctionWorker(job)
+        worker.signals.progress.connect(self._render_progress)
         worker.signals.result.connect(self._render_done)
         worker.signals.error.connect(self._render_error)
         worker.signals.finished.connect(lambda: self._set_busy(False, "Ready"))
-        self._set_busy(True, "Rendering locally with Qwen Image...")
+        self._set_busy(True, f"Rendering locally with Qwen Image · {steps} steps...")
+        self.progress.setRange(0, steps)
+        self.progress.setValue(0)
         self.thread_pool.start(worker)
+
+    def cancel_render(self) -> None:
+        self.render_cancel_event.set()
+        self.cancel_btn.setEnabled(False)
+        self.statusBar().showMessage("Cancelling render at the next diffusion step...")
+
+    def _render_progress(self, done: int, total: int) -> None:
+        self.progress.setRange(0, max(1, total))
+        self.progress.setValue(done)
+        self.statusBar().showMessage(f"Rendering · step {done}/{total}")
 
     def _render_done(self, payload) -> None:
         result, fidelity = payload
         self.render_image = result.image
+        self.retry_btn.setEnabled(True)
         self.canvas.set_image(self.render_image)
         if self.current_project is not None:
             try:
@@ -402,7 +434,14 @@ class MainWindow(DropWindow):
         )
 
     def _render_error(self, message: str) -> None:
-        QMessageBox.critical(self, "Render failed", message)
+        self.retry_btn.setEnabled(self.source_image is not None)
+        if "cancelled" in message.lower():
+            self.statusBar().showMessage("Render cancelled")
+            return
+        friendly = message
+        if "out of memory" in message.lower():
+            friendly = "GPU memory is full. MT AI will keep the source image; retry with Draft/Standard quality or Low Memory mode.\n\n" + message
+        QMessageBox.critical(self, "Render failed", friendly)
 
     def save_result(self) -> None:
         if self.render_image is None:
