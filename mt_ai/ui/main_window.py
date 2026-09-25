@@ -33,6 +33,7 @@ from mt_ai.hardware import detect_hardware
 from mt_ai.inference.qwen import QwenEngine
 from mt_ai.inference.types import RenderRequest
 from mt_ai.models.manager import ModelManager
+from mt_ai.projects import ProjectManager
 from mt_ai.prompts import MODE_DEFAULTS, ProtectionOptions, RenderIntent, build_prompt, suggest_user_prompt
 from mt_ai.version import APP_NAME, APP_SUBTITLE, APP_VERSION
 
@@ -83,6 +84,8 @@ class MainWindow(DropWindow):
         self.setWindowTitle(f"{APP_NAME} {APP_VERSION} — {APP_SUBTITLE}")
         self.resize(1500, 920)
         self.manager = ModelManager()
+        self.project_manager = ProjectManager()
+        self.current_project = None
         self.scene_analyzer = SceneAnalyzer()
         self.thread_pool = QThreadPool.globalInstance()
         self.source_image: Image.Image | None = None
@@ -264,6 +267,10 @@ class MainWindow(DropWindow):
             return
         self.source_path = path
         self.source_image = image
+        try:
+            self.current_project = self.project_manager.create(path.stem, path)
+        except Exception:
+            self.current_project = None
         self.render_image = None
         self.canvas.set_image(image)
         self.statusBar().showMessage(str(path))
@@ -280,6 +287,7 @@ class MainWindow(DropWindow):
         data = bytes(ptr[: qimg.sizeInBytes()])
         self.source_image = Image.frombytes("RGBA", (qimg.width(), qimg.height()), data).convert("RGB")
         self.source_path = None
+        self.current_project = None
         self.render_image = None
         self.canvas.set_image(self.source_image)
         self.analyze_scene()
@@ -378,6 +386,17 @@ class MainWindow(DropWindow):
         result, fidelity = payload
         self.render_image = result.image
         self.canvas.set_image(self.render_image)
+        if self.current_project is not None:
+            try:
+                metadata = result.serializable_metadata()
+                metadata["fidelity"] = {
+                    "overall_score": fidelity.overall_score,
+                    "edge_score": fidelity.edge_score,
+                    "orientation_score": fidelity.orientation_score,
+                }
+                self.project_manager.save_render(self.current_project, self.render_image, metadata)
+            except Exception as exc:
+                self.statusBar().showMessage(f"Render complete; history save failed: {exc}")
         self.statusBar().showMessage(
             f"Done in {result.duration_seconds:.1f}s · Structural Fidelity {fidelity.overall_score:.1%}"
         )
