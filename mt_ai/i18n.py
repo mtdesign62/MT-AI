@@ -11,7 +11,7 @@ VI = {
     "Furniture":"Nội thất","Windows":"Cửa sổ","Doors":"Cửa đi","Ceiling":"Trần",
     "Major objects":"Vật thể chính","Text / signage":"Chữ / biển hiệu","Quality":"Chất lượng",
     "Draft":"Nháp","Standard":"Tiêu chuẩn","High":"Cao","Ultra":"Siêu cao",
-    "Original":"Ảnh gốc","Rendered":"Ảnh kết xuất","Prompt":"Câu lệnh",
+    "Original":"Ảnh gốc","Rendered":"Ảnh kết xuất","Compare":"So sánh","Output Resolution":"Độ phân giải đầu ra","Match source":"Theo ảnh gốc","Custom":"Tùy chỉnh","Prompt":"Câu lệnh",
     "Open Image":"Mở ảnh","Paste":"Dán ảnh","Suggest Prompt":"Gợi ý câu lệnh",
     "AI Rewrite Prompt":"AI viết lại câu lệnh","Cancel":"Hủy","Retry":"Thử lại","Save Result":"Lưu kết quả",
     "File":"Tệp","Paste Image":"Dán ảnh","Tools":"Công cụ","Interior":"Nội thất",
