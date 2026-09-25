@@ -42,8 +42,8 @@ jobs:
         shell: powershell
         run: |
           python -m pip install -r requirements/gpu-e2e.txt
-          python -m pip install --no-deps "torchvision==0.23.0" --index-url https://download.pytorch.org/whl/cu128
-          python -c "import torch,torchvision; print('torch=', torch.__version__, 'torchvision=', torchvision.__version__)"
+          python -m pip install --upgrade --force-reinstall --no-deps --pre torchvision --index-url https://download.pytorch.org/whl/nightly/cu128
+          python -c "import torch,torchvision; print('torch=', torch.__version__, 'torchvision=', torchvision.__version__); print('torchvision_nms=', hasattr(torch.ops.torchvision, 'nms'))"
           python -c "import diffusers; assert hasattr(diffusers, 'QwenImage21Pipeline'); print('QwenImage21Pipeline=', diffusers.QwenImage21Pipeline)"
 
       - name: Run real Qwen Image 2.1 edit
