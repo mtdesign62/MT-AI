@@ -68,24 +68,30 @@ class QwenEngine:
             raise InferenceUnavailableError("Qwen Image local rendering currently requires NVIDIA CUDA")
 
         kwargs: dict[str, Any] = {"torch_dtype": torch.bfloat16, "local_files_only": True, "low_cpu_mem_usage": True}
-        # A 16 GB workstation can become unresponsive if pipeline loading is allowed to
-        # consume all system RAM/VRAM. Low-memory mode uses a conservative device map
-        # and an on-disk offload folder so Diffusers/Accelerate can spill safely.
-        if memory_profile == "low-memory":
+        # Adapt memory budgets to VRAM instead of hard-coding a particular GPU.
+        # Leave headroom for Windows/DWM and diffusion activations; 12 GB cards use
+        # aggressive CPU/disk offload, while larger cards progressively keep more on GPU.
+        if memory_profile in {"low-memory-12gb", "low-memory"}:
             from pathlib import Path
 
+            free_bytes, total_bytes = torch.cuda.mem_get_info(0)
+            total_gib = total_bytes / (1024 ** 3)
+            if total_gib < 11.0:
+                raise InferenceUnavailableError("MT AI requires an NVIDIA CUDA GPU with at least 12 GB VRAM")
+            gpu_budget = max(8, min(18, int(total_gib - (2.5 if total_gib < 14 else 3.0))))
+            cpu_budget = "28GiB" if memory_profile == "low-memory-12gb" else "24GiB"
             offload_dir = Path(self.model.local_path).parent / ".offload"
             offload_dir.mkdir(parents=True, exist_ok=True)
             kwargs.update(
                 {
                     "device_map": "balanced",
-                    "max_memory": {0: "13GiB", "cpu": "20GiB"},
+                    "max_memory": {0: f"{gpu_budget}GiB", "cpu": cpu_budget},
                     "offload_folder": str(offload_dir),
                     "offload_state_dict": True,
                 }
             )
         self.pipe = DiffusionPipeline.from_pretrained(self.model.local_path, **kwargs)
-        if memory_profile == "low-memory":
+        if memory_profile in {"low-memory-12gb", "low-memory"}:
             # device_map already placed/offloaded components during loading. Calling
             # enable_model_cpu_offload() as well would fight Accelerate hooks.
             pass
