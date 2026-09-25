@@ -6,6 +6,7 @@ from PySide6.QtWidgets import (
 )
 
 from mt_ai.models.manager import ModelManager
+from mt_ai.i18n import current_language, localize_widget
 from mt_ai.models.registry import DEFAULT_IMAGE_MODEL, DEFAULT_PROMPT_REWRITER
 from mt_ai.models.schemas import ModelCandidate
 
@@ -68,6 +69,7 @@ class ModelManagerDialog(QDialog):
         self.check_btn.clicked.connect(self.check_updates)
         self.install_update_btn.clicked.connect(self.install_selected_update)
         self.refresh()
+        localize_widget(self, current_language())
 
     def _busy(self, value: bool) -> None:
         for button in (self.install_btn, self.rewriter_btn, self.activate_btn, self.rollback_btn, self.check_btn, self.install_update_btn):
