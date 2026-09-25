@@ -14,7 +14,6 @@ jobs:
       PYTHONPATH: .
       HF_HUB_ENABLE_HF_TRANSFER: "0"
       PIP_DISABLE_PIP_VERSION_CHECK: "1"
-      PYTORCH_ALLOC_CONF: "per_process_memory_fraction:0.82,throw_on_cudamalloc_oom:True,garbage_collection_threshold:0.75"
 
     steps:
       - uses: actions/checkout@v4
@@ -37,7 +36,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) {
             python -m pip install torch --index-url https://download.pytorch.org/whl/cu128
           }
-          python -c "import torch; print('gpu=', torch.cuda.get_device_name(0)); print('capability=', torch.cuda.get_device_capability(0)); assert torch.cuda.is_available()"
+          python -c "import torch; print('gpu=', torch.cuda.get_device_name(0)); print('capability=', torch.cuda.get_device_capability(0)); torch.cuda.set_per_process_memory_fraction(0.82, 0); print('gpu_memory_fraction=0.82'); assert torch.cuda.is_available()"
 
       - name: Install minimal MT AI GPU runtime
         shell: powershell
