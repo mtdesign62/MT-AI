@@ -98,6 +98,7 @@ jobs:
         run: |
           pip install -r requirements/base.txt
           pip install -r requirements/ai.txt
+          pip install --upgrade --force-reinstall torch torchvision --index-url https://download.pytorch.org/whl/cu128
           pip install -r requirements/dev.txt
 
       - name: Verify source AI self-test
@@ -134,7 +135,7 @@ jobs:
       - name: Upload Windows executable
         uses: actions/upload-artifact@v4
         with:
-          name: MT-AI-v0.2.0-Windows-Bilingual
+          name: MT-AI-v0.2.1-Windows-Bilingual
           path: |
             dist/MT-AI-EN.exe
             dist/MT-AI-VI.exe
@@ -153,7 +154,7 @@ jobs:
           Write-Host "Full packaged MT-AI.exe GUI launch smoke passed"
 
 
-  release-v0-2-0:
+  release-v0-2-1:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: [windows-smoke, qwen-api-smoke, full-package-smoke]
     runs-on: ubuntu-latest
@@ -161,23 +162,23 @@ jobs:
       - name: Download bilingual Windows build
         uses: actions/download-artifact@v4
         with:
-          name: MT-AI-v0.2.0-Windows-Bilingual
+          name: MT-AI-v0.2.1-Windows-Bilingual
           path: release
 
-      - name: Publish GitHub Release v0.2.0
+      - name: Publish GitHub Release v0.2.1
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          if gh release view v0.2.0 --repo "${{ github.repository }}" >/dev/null 2>&1; then
-            echo "v0.2.0 already exists"
+          if gh release view v0.2.1 --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            echo "v0.2.1 already exists"
             exit 0
           fi
-          gh release create v0.2.0 release/*.exe \
+          gh release create v0.2.1 release/*.exe \
             --repo "${{ github.repository }}" \
             --target "${{ github.sha }}" \
-            --title "MT AI v0.2.0 — English + Tiếng Việt" \
-            --notes "Windows bilingual release of MT AI.
+            --title "MT AI v0.2.1 — English + Tiếng Việt" \
+            --notes "Windows bilingual release of MT AI with CUDA runtime and existing-model import.
 
           Included:
           - MT-AI-EN.exe — English interface
