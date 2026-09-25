@@ -450,6 +450,9 @@ class MainWindow(DropWindow):
         if not hw.cuda_available:
             QMessageBox.warning(self, "CUDA required", "No NVIDIA CUDA GPU is available. Local Qwen rendering cannot start on this machine.")
             return
+        if hw.recommended_profile == "unsupported":
+            QMessageBox.warning(self, "VRAM required", "MT AI requires an NVIDIA CUDA GPU with at least 12 GB VRAM for local Qwen Image 2.1 rendering.")
+            return
         source = self.source_image.copy()
         prompt = self._full_prompt()
         self.render_cancel_event.clear()
@@ -457,7 +460,7 @@ class MainWindow(DropWindow):
         steps = {"Draft": 4, "Standard": 8, "High": 12, "Ultra": 20}.get(quality, 8)
         dimensions = self._output_dimensions()
         self.last_render_request = {"quality": quality, "steps": steps, "profile": hw.recommended_profile, "dimensions": dimensions}
-        profile = hw.recommended_profile if hw.recommended_profile in {"quality", "balanced", "low-memory"} else "low-memory"
+        profile = hw.recommended_profile if hw.recommended_profile in {"quality", "balanced", "low-memory", "low-memory-12gb"} else "low-memory-12gb"
 
         def job():
             result = QwenEngine(active).render(
