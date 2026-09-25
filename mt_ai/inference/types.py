@@ -6,7 +6,7 @@ from typing import Literal
 
 from PIL import Image
 
-MemoryProfile = Literal["quality", "balanced", "low-memory"]
+MemoryProfile = Literal["quality", "balanced", "low-memory", "low-memory-12gb"]
 QualityMode = Literal["Draft", "Standard", "High", "Ultra"]
 
 
