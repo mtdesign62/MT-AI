@@ -1,5 +1,6 @@
 from importlib.metadata import distributions
 from pathlib import Path
+import os
 
 from PyInstaller.utils.hooks import collect_all, copy_metadata
 
@@ -60,6 +61,6 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name="MT-AI",
+    name=os.environ.get("MT_AI_EXE_NAME", "MT-AI"),
     console=False,
 )
