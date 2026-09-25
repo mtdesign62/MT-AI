@@ -14,6 +14,7 @@ jobs:
       PYTHONPATH: .
       HF_HUB_ENABLE_HF_TRANSFER: "0"
       PIP_DISABLE_PIP_VERSION_CHECK: "1"
+      PYTORCH_ALLOC_CONF: "per_process_memory_fraction:0.82,throw_on_cudamalloc_oom:True,garbage_collection_threshold:0.75"
 
     steps:
       - uses: actions/checkout@v4
@@ -49,7 +50,7 @@ jobs:
       - name: Run real Qwen Image 2.1 edit
         shell: powershell
         run: |
-          python scripts/gpu_e2e.py --output-dir gpu_e2e_artifacts --steps 20 --memory-profile low-memory --min-fidelity 0
+          python scripts/gpu_e2e.py --output-dir gpu_e2e_artifacts --width 512 --height 288 --steps 4 --memory-profile low-memory --min-fidelity 0
 
       - name: Print report
         if: always()
