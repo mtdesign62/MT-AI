@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
     QProgressBar,
     QPushButton,
     QSlider,
+    QSpinBox,
     QSplitter,
     QStatusBar,
     QVBoxLayout,
@@ -130,14 +131,24 @@ class MainWindow(DropWindow):
         center = QWidget()
         center_l = QVBoxLayout(center)
         self.canvas = ImageCanvas()
+        self.compare_slider = QSlider(Qt.Orientation.Horizontal)
+        self.compare_slider.setRange(0, 100)
+        self.compare_slider.setValue(50)
+        self.compare_slider.setVisible(False)
+        self.compare_slider.valueChanged.connect(self.canvas.set_comparison_percent)
+        center_l.addWidget(self.compare_slider)
         center_l.addWidget(self.canvas, 1)
         view_row = QHBoxLayout()
         self.original_btn = QPushButton("Original")
         self.rendered_btn = QPushButton("Rendered")
-        self.original_btn.clicked.connect(lambda: self.source_image and self.canvas.set_image(self.source_image))
-        self.rendered_btn.clicked.connect(lambda: self.render_image and self.canvas.set_image(self.render_image))
+        self.compare_btn = QPushButton("Compare")
+        self.compare_btn.setCheckable(True)
+        self.original_btn.clicked.connect(lambda: self._show_single_image(self.source_image))
+        self.rendered_btn.clicked.connect(lambda: self._show_single_image(self.render_image))
+        self.compare_btn.toggled.connect(self._toggle_compare)
         view_row.addWidget(self.original_btn)
         view_row.addWidget(self.rendered_btn)
+        view_row.addWidget(self.compare_btn)
         view_row.addStretch(1)
         center_l.addLayout(view_row)
         splitter.addWidget(center)
@@ -190,6 +201,22 @@ class MainWindow(DropWindow):
         self.quality.addItems(["Draft", "Standard", "High", "Ultra"])
         self.quality.setCurrentText("Standard")
         right_l.addWidget(self.quality)
+        right_l.addWidget(QLabel("Output Resolution"))
+        self.resolution = QComboBox()
+        self.resolution.addItems([
+            "Match source", "HD · 1280×720 (16:9)", "Full HD · 1920×1080 (16:9)",
+            "2K · 2560×1440 (16:9)", "4K · 3840×2160 (16:9)",
+            "Square · 1024×1024 (1:1)", "Portrait · 1080×1350 (4:5)",
+            "Story · 1080×1920 (9:16)", "Custom",
+        ])
+        right_l.addWidget(self.resolution)
+        custom_row = QHBoxLayout()
+        self.custom_width = QSpinBox(); self.custom_width.setRange(256, 8192); self.custom_width.setSingleStep(32); self.custom_width.setValue(1920)
+        self.custom_height = QSpinBox(); self.custom_height.setRange(256, 8192); self.custom_height.setSingleStep(32); self.custom_height.setValue(1080)
+        self.custom_width.setEnabled(False); self.custom_height.setEnabled(False)
+        custom_row.addWidget(self.custom_width); custom_row.addWidget(QLabel("×")); custom_row.addWidget(self.custom_height)
+        right_l.addLayout(custom_row)
+        self.resolution.currentTextChanged.connect(self._resolution_changed)
         right_l.addStretch(1)
         splitter.addWidget(right)
         splitter.setSizes([190, 950, 330])
@@ -266,6 +293,39 @@ class MainWindow(DropWindow):
             f"Model: {active.repo_id} v{active.version}\n{active.revision[:12]}"
             if active else "Model: not installed / not activated"
         )
+
+    def _show_single_image(self, image: Image.Image | None) -> None:
+        self.compare_btn.setChecked(False)
+        if image is not None:
+            self.canvas.set_image(image)
+
+    def _toggle_compare(self, enabled: bool) -> None:
+        available = self.source_image is not None and self.render_image is not None
+        enabled = enabled and available
+        self.compare_slider.setVisible(enabled)
+        if enabled:
+            self.canvas.set_comparison(self.source_image, self.render_image, self.compare_slider.value())
+        elif self.render_image is not None:
+            self.canvas.set_image(self.render_image)
+
+    def _resolution_changed(self, value: str) -> None:
+        custom = value == "Custom"
+        self.custom_width.setEnabled(custom)
+        self.custom_height.setEnabled(custom)
+
+    def _output_dimensions(self) -> tuple[int, int] | None:
+        value = self.resolution.currentText()
+        if value == "Match source":
+            return self.source_image.size if self.source_image is not None else None
+        if value == "Custom":
+            return self.custom_width.value(), self.custom_height.value()
+        presets = {
+            "HD · 1280×720 (16:9)": (1280, 720), "Full HD · 1920×1080 (16:9)": (1920, 1080),
+            "2K · 2560×1440 (16:9)": (2560, 1440), "4K · 3840×2160 (16:9)": (3840, 2160),
+            "Square · 1024×1024 (1:1)": (1024, 1024), "Portrait · 1080×1350 (4:5)": (1080, 1350),
+            "Story · 1080×1920 (9:16)": (1080, 1920),
+        }
+        return presets.get(value)
 
     def _mode_changed(self, mode: str) -> None:
         self.current_mode = mode
@@ -385,12 +445,14 @@ class MainWindow(DropWindow):
         self.render_cancel_event.clear()
         quality = self.quality.currentText()
         steps = {"Draft": 4, "Standard": 8, "High": 12, "Ultra": 20}.get(quality, 8)
-        self.last_render_request = {"quality": quality, "steps": steps, "profile": hw.recommended_profile}
+        dimensions = self._output_dimensions()
+        self.last_render_request = {"quality": quality, "steps": steps, "profile": hw.recommended_profile, "dimensions": dimensions}
         profile = hw.recommended_profile if hw.recommended_profile in {"quality", "balanced", "low-memory"} else "low-memory"
 
         def job():
             result = QwenEngine(active).render(
-                RenderRequest(source=source, prompt=prompt, quality=quality, steps=steps, memory_profile=profile),
+                RenderRequest(source=source, prompt=prompt, quality=quality, steps=steps, memory_profile=profile,
+                              width=dimensions[0] if dimensions else None, height=dimensions[1] if dimensions else None),
                 cancel_check=self.render_cancel_event.is_set,
                 progress=lambda done, total: worker.signals.progress.emit(done, total),
             )
@@ -420,6 +482,7 @@ class MainWindow(DropWindow):
     def _render_done(self, payload) -> None:
         result, fidelity = payload
         self.render_image = result.image
+        self.compare_btn.setEnabled(True)
         self.retry_btn.setEnabled(True)
         self.canvas.set_image(self.render_image)
         if self.current_project is not None:
