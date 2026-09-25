@@ -3,7 +3,7 @@ from __future__ import annotations
 import inspect
 import time
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Callable
 
 from PIL import Image
 
@@ -17,6 +17,10 @@ class InferenceUnavailableError(RuntimeError):
 
 
 class InferenceOOMError(RuntimeError):
+    pass
+
+
+class RenderCancelledError(RuntimeError):
     pass
 
 
@@ -113,11 +117,18 @@ class QwenEngine:
         allowed = set(signature.parameters)
         return {k: v for k, v in kwargs.items() if k in allowed}
 
-    def render(self, request: RenderRequest) -> RenderResult:
+    def render(
+        self,
+        request: RenderRequest,
+        cancel_check: Callable[[], bool] | None = None,
+        progress: Callable[[int, int], None] | None = None,
+    ) -> RenderResult:
         try:
             import torch
         except ImportError as exc:
             raise InferenceUnavailableError("PyTorch is not installed") from exc
+        if cancel_check and cancel_check():
+            raise RenderCancelledError("Render cancelled")
         if self.pipe is None or self.loaded_profile != request.memory_profile:
             self.unload()
             self.load(request.memory_profile)
@@ -128,6 +139,13 @@ class QwenEngine:
             else fit_dimensions(request.source.size, request.quality)
         )
         generator = torch.Generator(device="cuda").manual_seed(request.seed)
+        def on_step_end(pipe, step_index, timestep, callback_kwargs):
+            if cancel_check and cancel_check():
+                raise RenderCancelledError("Render cancelled")
+            if progress:
+                progress(step_index + 1, request.steps)
+            return callback_kwargs
+
         kwargs = {
             "prompt": request.prompt,
             "image": request.source.convert("RGB"),
@@ -135,6 +153,7 @@ class QwenEngine:
             "generator": generator,
             "width": int(width),
             "height": int(height),
+            "callback_on_step_end": on_step_end,
         }
         call_kwargs = self._filtered_call_kwargs(kwargs)
         start = time.perf_counter()
@@ -150,6 +169,8 @@ class QwenEngine:
                     ) from exc
             raise
         duration = time.perf_counter() - start
+        if cancel_check and cancel_check():
+            raise RenderCancelledError("Render cancelled")
         image = output.images[0].convert("RGB")
         return RenderResult(
             image=image,
