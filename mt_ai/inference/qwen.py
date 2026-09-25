@@ -63,7 +63,7 @@ class QwenEngine:
         if not torch.cuda.is_available():
             raise InferenceUnavailableError("Qwen Image local rendering currently requires NVIDIA CUDA")
 
-        kwargs: dict[str, Any] = {"torch_dtype": torch.bfloat16, "local_files_only": True}
+        kwargs: dict[str, Any] = {"torch_dtype": torch.bfloat16, "local_files_only": True, "low_cpu_mem_usage": True}
         # A 16 GB workstation can become unresponsive if pipeline loading is allowed to
         # consume all system RAM/VRAM. Low-memory mode uses a conservative device map
         # and an on-disk offload folder so Diffusers/Accelerate can spill safely.
