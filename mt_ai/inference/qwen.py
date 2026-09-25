@@ -63,8 +63,30 @@ class QwenEngine:
         if not torch.cuda.is_available():
             raise InferenceUnavailableError("Qwen Image local rendering currently requires NVIDIA CUDA")
 
-        kwargs: dict[str, Any] = {"torch_dtype": torch.bfloat16, "local_files_only": True}\n        # A 16 GB workstation can become unresponsive if pipeline loading is allowed to\n        # consume all system RAM/VRAM. Low-memory mode uses a conservative device map\n        # and an on-disk offload folder so Diffusers/Accelerate can spill safely.\n        if memory_profile == "low-memory":\n            from pathlib import Path\n\n            offload_dir = Path(self.model.local_path).parent / ".offload"\n            offload_dir.mkdir(parents=True, exist_ok=True)\n            kwargs.update(\n                {\n                    "device_map": "balanced",\n                    "max_memory": {0: "13GiB", "cpu": "20GiB"},\n                    "offload_folder": str(offload_dir),\n                    "offload_state_dict": True,\n                }\n            )\n        self.pipe = DiffusionPipeline.from_pretrained(self.model.local_path, **kwargs)
-        if memory_profile == "low-memory":\n            # device_map already placed/offloaded components during loading. Calling\n            # enable_model_cpu_offload() as well would fight Accelerate hooks.\n            pass\n        else:\n            self.pipe.to("cuda")
+        kwargs: dict[str, Any] = {"torch_dtype": torch.bfloat16, "local_files_only": True}
+        # A 16 GB workstation can become unresponsive if pipeline loading is allowed to
+        # consume all system RAM/VRAM. Low-memory mode uses a conservative device map
+        # and an on-disk offload folder so Diffusers/Accelerate can spill safely.
+        if memory_profile == "low-memory":
+            from pathlib import Path
+
+            offload_dir = Path(self.model.local_path).parent / ".offload"
+            offload_dir.mkdir(parents=True, exist_ok=True)
+            kwargs.update(
+                {
+                    "device_map": "balanced",
+                    "max_memory": {0: "13GiB", "cpu": "20GiB"},
+                    "offload_folder": str(offload_dir),
+                    "offload_state_dict": True,
+                }
+            )
+        self.pipe = DiffusionPipeline.from_pretrained(self.model.local_path, **kwargs)
+        if memory_profile == "low-memory":
+            # device_map already placed/offloaded components during loading. Calling
+            # enable_model_cpu_offload() as well would fight Accelerate hooks.
+            pass
+        else:
+            self.pipe.to("cuda")
         if hasattr(self.pipe, "set_progress_bar_config"):
             self.pipe.set_progress_bar_config(disable=False)
         self.loaded_profile = memory_profile
