@@ -32,7 +32,7 @@ from PySide6.QtWidgets import (
 from mt_ai.analysis.fidelity import compare_source_and_render
 from mt_ai.analysis.scene import SceneAnalyzer
 from mt_ai.hardware import detect_hardware
-from mt_ai.i18n import current_language, localize_widget, tr
+from mt_ai.i18n import current_language, localize_widget, relocalize_widget, tr
 from mt_ai.inference.qwen import QwenEngine
 from mt_ai.inference.types import RenderRequest
 from mt_ai.models.manager import ModelManager
@@ -271,6 +271,16 @@ class MainWindow(DropWindow):
         models = QAction("Model Manager", self)
         models.triggered.connect(self.open_model_manager)
         tools.addAction(models)
+        language_menu = self.menuBar().addMenu("Language")
+        english = QAction("English", self); english.triggered.connect(lambda: self.set_language("en"))
+        vietnamese = QAction("Vietnamese", self); vietnamese.triggered.connect(lambda: self.set_language("vi"))
+        language_menu.addActions([english, vietnamese])
+
+    def set_language(self, language: str) -> None:
+        self.language = "vi" if language == "vi" else "en"
+        relocalize_widget(self, self.language)
+        self.setWindowTitle(f"{APP_NAME} {APP_VERSION} — {tr(APP_SUBTITLE, self.language)} · {self.language.upper()}")
+        self.statusBar().showMessage("Đã chuyển sang Tiếng Việt" if self.language == "vi" else "Switched to English")
 
     def _set_busy(self, busy: bool, text: str = "") -> None:
         self.render_btn.setEnabled(not busy)
