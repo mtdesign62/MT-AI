@@ -31,6 +31,7 @@ from PySide6.QtWidgets import (
 from mt_ai.analysis.fidelity import compare_source_and_render
 from mt_ai.analysis.scene import SceneAnalyzer
 from mt_ai.hardware import detect_hardware
+from mt_ai.i18n import current_language, localize_widget, tr
 from mt_ai.inference.qwen import QwenEngine
 from mt_ai.inference.types import RenderRequest
 from mt_ai.models.manager import ModelManager
@@ -99,6 +100,9 @@ class MainWindow(DropWindow):
         self.last_render_request: dict | None = None
         self._build_ui()
         self._build_menu()
+        self.language = current_language()
+        localize_widget(self, self.language)
+        self.setWindowTitle(f"{APP_NAME} {APP_VERSION} — {tr(APP_SUBTITLE, self.language)} · {self.language.upper()}")
         self._refresh_model_status()
         self._refresh_hardware()
 
