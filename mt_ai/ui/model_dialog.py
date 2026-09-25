@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import QThread, Signal
 from PySide6.QtWidgets import (
-    QDialog, QHBoxLayout, QLabel, QListWidget, QMessageBox, QPushButton, QProgressBar, QVBoxLayout,
+    QDialog, QFileDialog, QHBoxLayout, QLabel, QListWidget, QMessageBox, QPushButton, QProgressBar, QVBoxLayout,
 )
 
 from mt_ai.models.manager import ModelManager
@@ -45,11 +45,12 @@ class ModelManagerDialog(QDialog):
         self.installed_list = QListWidget()
         layout.addWidget(self.installed_list, 1)
         row = QHBoxLayout()
+        self.import_btn = QPushButton("Import Existing Model")
         self.install_btn = QPushButton("Install Qwen Image 2.1")
         self.rewriter_btn = QPushButton("Install Prompt Rewriter (optional)")
         self.activate_btn = QPushButton("Activate selected")
         self.rollback_btn = QPushButton("Rollback")
-        row.addWidget(self.install_btn); row.addWidget(self.rewriter_btn); row.addWidget(self.activate_btn); row.addWidget(self.rollback_btn)
+        row.addWidget(self.import_btn); row.addWidget(self.install_btn); row.addWidget(self.rewriter_btn); row.addWidget(self.activate_btn); row.addWidget(self.rollback_btn)
         layout.addLayout(row)
         layout.addWidget(QLabel("Available official Qwen updates"))
         self.updates_list = QListWidget()
@@ -62,6 +63,7 @@ class ModelManagerDialog(QDialog):
         self.status_label = QLabel("Ready")
         self.progress = QProgressBar(); self.progress.setRange(0, 1)
         layout.addWidget(self.status_label); layout.addWidget(self.progress)
+        self.import_btn.clicked.connect(self.import_existing)
         self.install_btn.clicked.connect(self.install_default)
         self.rewriter_btn.clicked.connect(self.install_rewriter)
         self.activate_btn.clicked.connect(self.activate_selected)
@@ -72,7 +74,7 @@ class ModelManagerDialog(QDialog):
         localize_widget(self, current_language())
 
     def _busy(self, value: bool) -> None:
-        for button in (self.install_btn, self.rewriter_btn, self.activate_btn, self.rollback_btn, self.check_btn, self.install_update_btn):
+        for button in (self.import_btn, self.install_btn, self.rewriter_btn, self.activate_btn, self.rollback_btn, self.check_btn, self.install_update_btn):
             button.setEnabled(not value)
         self.progress.setRange(0, 0 if value else 1)
 
@@ -96,6 +98,19 @@ class ModelManagerDialog(QDialog):
         self.installed_list.clear()
         for model in self.manager.list_installed():
             self.installed_list.addItem(f"{model.repo_id} | v{model.version} | {model.revision[:12]}")
+
+    def import_existing(self) -> None:
+        folder = QFileDialog.getExistingDirectory(self, "Select existing Qwen Image 2.1 folder")
+        if not folder:
+            return
+        try:
+            model = self.manager.import_existing(folder)
+            self.manager.activate(model)
+            self.status_label.setText("Existing model imported and activated")
+            self.model_changed.emit()
+            self.refresh()
+        except Exception as exc:
+            QMessageBox.critical(self, "Import model failed", str(exc))
 
     def install_default(self) -> None:
         def fn(status): return self.manager.install_spec(DEFAULT_IMAGE_MODEL, progress=status)
