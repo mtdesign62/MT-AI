@@ -4,3 +4,4 @@ Retry 3: minimal GPU-only dependency install.
 Retry 4: install NumPy before CUDA Torch probe.
 Retry 5: torchvision dependency fix.
 Retry 6: match torchvision to installed nightly torch 2.11 cu128.
+Retry 7: safe 512x288 4-step low-memory render probe after runner restart.
