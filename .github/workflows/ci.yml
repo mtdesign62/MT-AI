@@ -5,6 +5,9 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   windows-smoke:
     runs-on: windows-latest
@@ -141,3 +144,41 @@ jobs:
           }
           Stop-Process -Id $proc.Id -Force
           Write-Host "Full packaged MT-AI.exe GUI launch smoke passed"
+
+
+  release-v0-2-0:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [windows-smoke, qwen-api-smoke, full-package-smoke]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download bilingual Windows build
+        uses: actions/download-artifact@v4
+        with:
+          name: MT-AI-v0.2.0-Windows-Bilingual
+          path: release
+
+      - name: Publish GitHub Release v0.2.0
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          if gh release view v0.2.0 --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            echo "v0.2.0 already exists"
+            exit 0
+          fi
+          gh release create v0.2.0 release/*.exe \
+            --repo "${{ github.repository }}" \
+            --target "${{ github.sha }}" \
+            --title "MT AI v0.2.0 — English + Tiếng Việt" \
+            --notes "Windows bilingual release of MT AI.
+
+          Included:
+          - MT-AI-EN.exe — English interface
+          - MT-AI-VI.exe — giao diện Tiếng Việt
+          - Local Qwen Image 2.1 rendering runtime
+          - Interior, Architecture, Landscape and Masterplan workflows
+          - Render progress, Cancel and Retry controls
+          - Draft, Standard, High and Ultra quality presets
+          - Model Manager and structural-fidelity workflow
+
+          Model weights are distributed separately and are not bundled into the executable."
