@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import QThread, Signal
 from PySide6.QtWidgets import (
-    QDialog, QFileDialog, QHBoxLayout, QLabel, QListWidget, QMessageBox, QPushButton, QProgressBar, QVBoxLayout,
+    QDialog, QFileDialog, QHBoxLayout, QLabel, QListWidget, QMessageBox, QPushButton, QProgressBar, QVBoxLayout, QPlainTextEdit,
 )
 
 from mt_ai.models.manager import ModelManager
@@ -47,10 +47,11 @@ class ModelManagerDialog(QDialog):
         row = QHBoxLayout()
         self.import_btn = QPushButton("Import Existing Model")
         self.install_btn = QPushButton("Install Qwen Image 2.1")
+        self.guide_btn = QPushButton("PowerShell Download Guide")
         self.rewriter_btn = QPushButton("Install Prompt Rewriter (optional)")
         self.activate_btn = QPushButton("Activate selected")
         self.rollback_btn = QPushButton("Rollback")
-        row.addWidget(self.import_btn); row.addWidget(self.install_btn); row.addWidget(self.rewriter_btn); row.addWidget(self.activate_btn); row.addWidget(self.rollback_btn)
+        row.addWidget(self.import_btn); row.addWidget(self.install_btn); row.addWidget(self.guide_btn); row.addWidget(self.rewriter_btn); row.addWidget(self.activate_btn); row.addWidget(self.rollback_btn)
         layout.addLayout(row)
         layout.addWidget(QLabel("Available official Qwen updates"))
         self.updates_list = QListWidget()
@@ -65,6 +66,7 @@ class ModelManagerDialog(QDialog):
         layout.addWidget(self.status_label); layout.addWidget(self.progress)
         self.import_btn.clicked.connect(self.import_existing)
         self.install_btn.clicked.connect(self.install_default)
+        self.guide_btn.clicked.connect(self.show_download_guide)
         self.rewriter_btn.clicked.connect(self.install_rewriter)
         self.activate_btn.clicked.connect(self.activate_selected)
         self.rollback_btn.clicked.connect(self.rollback)
@@ -74,7 +76,7 @@ class ModelManagerDialog(QDialog):
         localize_widget(self, current_language())
 
     def _busy(self, value: bool) -> None:
-        for button in (self.import_btn, self.install_btn, self.rewriter_btn, self.activate_btn, self.rollback_btn, self.check_btn, self.install_update_btn):
+        for button in (self.import_btn, self.install_btn, self.guide_btn, self.rewriter_btn, self.activate_btn, self.rollback_btn, self.check_btn, self.install_update_btn):
             button.setEnabled(not value)
         self.progress.setRange(0, 0 if value else 1)
 
@@ -111,6 +113,31 @@ class ModelManagerDialog(QDialog):
             self.refresh()
         except Exception as exc:
             QMessageBox.critical(self, "Import model failed", str(exc))
+
+    def show_download_guide(self) -> None:
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Qwen Image 2.1 — PowerShell Download Guide")
+        dialog.resize(760, 430)
+        layout = QVBoxLayout(dialog)
+        layout.addWidget(QLabel(
+            "Nếu chưa có model, mở Windows PowerShell và chạy lần lượt các lệnh dưới đây. "
+            "Bạn có thể đổi D:\\MT-AI\\Models\\Qwen-Image-2.1 thành thư mục khác nếu muốn."
+        ))
+        commands = QPlainTextEdit()
+        commands.setReadOnly(True)
+        commands.setPlainText(
+            'py -m pip install -U "huggingface_hub[cli]"\n\n'
+            'hf download Qwen/Qwen-Image-2.1 --local-dir "D:\\MT-AI\\Models\\Qwen-Image-2.1"'
+        )
+        layout.addWidget(commands)
+        layout.addWidget(QLabel(
+            "Tải xong: bấm “Thêm model có sẵn / Import Existing Model”, chọn đúng thư mục "
+            "Qwen-Image-2.1 rồi MT AI sẽ kiểm tra và kích hoạt model."
+        ))
+        close_btn = QPushButton("Đóng / Close")
+        close_btn.clicked.connect(dialog.accept)
+        layout.addWidget(close_btn)
+        dialog.exec()
 
     def install_default(self) -> None:
         def fn(status): return self.manager.install_spec(DEFAULT_IMAGE_MODEL, progress=status)
