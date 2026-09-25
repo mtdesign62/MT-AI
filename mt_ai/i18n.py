@@ -23,6 +23,7 @@ VI = {
     "Install Prompt Rewriter (optional)":"Cài bộ viết lại câu lệnh (tùy chọn)","Activate selected":"Kích hoạt mục đã chọn",
     "Rollback":"Quay lại phiên bản trước","Available official Qwen updates":"Bản cập nhật Qwen chính thức",
     "Check updates":"Kiểm tra cập nhật","Install selected update":"Cài bản cập nhật đã chọn","Ready":"Sẵn sàng",
+    "Language":"Ngôn ngữ","English":"English","Vietnamese":"Tiếng Việt",
 }
 
 def current_language() -> str:
@@ -32,7 +33,7 @@ def current_language() -> str:
     env = os.environ.get("MT_AI_LANG", "").lower()
     if env:
         return "vi" if env.startswith("vi") else "en"
-    return "vi" if "VI" in os.path.basename(sys.executable).upper() else "en"
+    return "vi"
 
 def tr(text: str, lang: str | None = None) -> str:
     return VI.get(text, text) if (lang or current_language()) == "vi" else text
@@ -59,3 +60,34 @@ def localize_widget(root, lang: str | None = None) -> None:
             if menu:
                 for child in menu.actions():
                     child.setText(tr(child.text().replace("&",""), "vi"))
+
+
+def reverse_tr(text: str) -> str:
+    for source, translated in VI.items():
+        if text == translated:
+            return source
+    return text
+
+def relocalize_widget(root, lang: str) -> None:
+    """Switch an already-created window between English and Vietnamese."""
+    from PySide6.QtWidgets import QAbstractButton, QComboBox, QGroupBox, QLabel, QListWidget
+    for obj in [root, *root.findChildren(object)]:
+        if isinstance(obj, QAbstractButton):
+            obj.setText(tr(reverse_tr(obj.text()), lang))
+        if isinstance(obj, QLabel):
+            obj.setText(tr(reverse_tr(obj.text()), lang))
+        if isinstance(obj, QGroupBox):
+            obj.setTitle(tr(reverse_tr(obj.title()), lang))
+        if isinstance(obj, QComboBox):
+            for i in range(obj.count()):
+                obj.setItemText(i, tr(reverse_tr(obj.itemText(i)), lang))
+        if isinstance(obj, QListWidget):
+            for i in range(obj.count()):
+                obj.item(i).setText(tr(reverse_tr(obj.item(i).text()), lang))
+    if hasattr(root, "menuBar"):
+        for action in root.menuBar().actions():
+            action.setText(tr(reverse_tr(action.text().replace("&", "")), lang))
+            menu = action.menu()
+            if menu:
+                for child in menu.actions():
+                    child.setText(tr(reverse_tr(child.text().replace("&", "")), lang))
