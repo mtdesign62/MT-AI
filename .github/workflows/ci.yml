@@ -104,24 +104,20 @@ jobs:
       - name: Verify source AI self-test
         run: python -m mt_ai.app --self-test-ai
 
-      - name: Build bilingual Windows executables with AI runtime
+      - name: Build unified bilingual Windows executable with AI runtime
         shell: pwsh
         run: |
-          $env:MT_AI_EXE_NAME = "MT-AI-EN"
+          $env:MT_AI_EXE_NAME = "MT-AI"
           pyinstaller --clean --noconfirm installer\MT-AI.spec
-          Copy-Item ".\dist\MT-AI-EN.exe" ".\MT-AI-EN.exe" -Force
-          $env:MT_AI_EXE_NAME = "MT-AI-VI"
-          pyinstaller --clean --noconfirm installer\MT-AI.spec
-          Copy-Item ".\MT-AI-EN.exe" ".\dist\MT-AI-EN.exe" -Force
 
       - name: Verify frozen executable contains Qwen runtime
         shell: pwsh
         run: |
-          if (-not (Test-Path ".\dist\MT-AI-EN.exe") -or -not (Test-Path ".\dist\MT-AI-VI.exe")) {
-            throw "Bilingual MT AI executables were not created"
+          if (-not (Test-Path ".\dist\MT-AI.exe")) {
+            throw "MT-AI.exe was not created"
           }
           Remove-Item ".\mt_ai_ai_self_test_report.txt" -ErrorAction SilentlyContinue
-          $probe = Start-Process -FilePath ".\dist\MT-AI-EN.exe" -ArgumentList "--self-test-ai" -Wait -PassThru
+          $probe = Start-Process -FilePath ".\dist\MT-AI.exe" -ArgumentList "--self-test-ai" -Wait -PassThru
           if (Test-Path ".\mt_ai_ai_self_test_report.txt") {
             Write-Host "----- frozen self-test report -----"
             Get-Content ".\mt_ai_ai_self_test_report.txt"
@@ -135,17 +131,15 @@ jobs:
       - name: Upload Windows executable
         uses: actions/upload-artifact@v4
         with:
-          name: MT-AI-v0.2.1-Windows-Bilingual
-          path: |
-            dist/MT-AI-EN.exe
-            dist/MT-AI-VI.exe
+          name: MT-AI-v0.2.1-Windows
+          path: dist/MT-AI.exe
           if-no-files-found: error
           retention-days: 30
 
       - name: Smoke launch full packaged GUI
         shell: pwsh
         run: |
-          $proc = Start-Process -FilePath ".\dist\MT-AI-VI.exe" -PassThru
+          $proc = Start-Process -FilePath ".\dist\MT-AI.exe" -PassThru
           Start-Sleep -Seconds 8
           if ($proc.HasExited) {
             throw "Full MT-AI.exe exited unexpectedly with code $($proc.ExitCode)"
@@ -162,7 +156,7 @@ jobs:
       - name: Download bilingual Windows build
         uses: actions/download-artifact@v4
         with:
-          name: MT-AI-v0.2.1-Windows-Bilingual
+          name: MT-AI-v0.2.1-Windows
           path: release
 
       - name: Publish GitHub Release v0.2.1
@@ -177,12 +171,11 @@ jobs:
           gh release create v0.2.1 release/*.exe \
             --repo "${{ github.repository }}" \
             --target "${{ github.sha }}" \
-            --title "MT AI v0.2.1 — English + Tiếng Việt" \
+            --title "MT AI v0.2.1 — English + Tiếng Việt in one app" \
             --notes "Windows bilingual release of MT AI with CUDA runtime and existing-model import.
 
           Included:
-          - MT-AI-EN.exe — English interface
-          - MT-AI-VI.exe — giao diện Tiếng Việt
+          - MT-AI.exe — one Windows app with instant English / Tiếng Việt switching
           - Local Qwen Image 2.1 rendering runtime
           - Interior, Architecture, Landscape and Masterplan workflows
           - Render progress, Cancel and Retry controls
