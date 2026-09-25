@@ -6,7 +6,7 @@ MT AI is a Windows-first, local-first architectural image renderer designed to t
 
 ## Current repository status
 
-This is the first working MVP codebase (`0.1.0`). The deterministic/core test suite passes, while real Qwen Image 2.1 GPU inference is intentionally marked **BLOCKED_BY_HARDWARE** in this development environment because it has no NVIDIA CUDA GPU and the full model weights are not installed here.
+This is the first working MVP codebase (`0.1.0`). The deterministic/core test suite passes. Real Qwen Image 2.1 GPU inference has also been validated successfully on the target RTX 5060 Ti workstation using the low-memory probe; routine CI remains GPU-free so development tests do not monopolize the workstation.
 
 Implemented now:
 
@@ -159,7 +159,7 @@ GPU inference tests are intentionally separate because downloading/loading Qwen 
 - Scene Analysis V1 is a deterministic fallback, not yet a full semantic architectural VLM analysis system.
 - Structural Fidelity V1 is an image-structure heuristic, not CAD-level geometric validation.
 - The default Upscale implementation is a fallback resampler until a separately licensed AI upscaler is selected and benchmarked.
-- Real Qwen inference has not been executed in the current development sandbox due to lack of CUDA/model weights.
+- Real Qwen inference is proven on the target RTX 5060 Ti, but production-size architectural renders still need broader quality/performance benchmarking.
 - Windows installer is a build skeleton at this stage, not yet clean-VM validated.
 - The Qwen model license must be reviewed before commercial distribution.
 
