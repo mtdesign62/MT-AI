@@ -39,6 +39,7 @@ from mt_ai.models.manager import ModelManager
 from mt_ai.projects import ProjectManager
 from mt_ai.prompts import MODE_DEFAULTS, ProtectionOptions, RenderIntent, build_prompt, suggest_user_prompt
 from mt_ai.version import APP_NAME, APP_SUBTITLE, APP_VERSION
+from mt_ai.upscale import LanczosUpscaleBackend, smart_generation_size
 
 from .canvas import ImageCanvas
 from .model_dialog import ModelManagerDialog
@@ -143,6 +144,7 @@ class MainWindow(DropWindow):
         self.rendered_btn = QPushButton("Rendered")
         self.compare_btn = QPushButton("Compare")
         self.compare_btn.setCheckable(True)
+        self.compare_btn.setEnabled(False)
         self.original_btn.clicked.connect(lambda: self._show_single_image(self.source_image))
         self.rendered_btn.clicked.connect(lambda: self._show_single_image(self.render_image))
         self.compare_btn.toggled.connect(self._toggle_compare)
@@ -359,6 +361,7 @@ class MainWindow(DropWindow):
         except Exception:
             self.current_project = None
         self.render_image = None
+        self.compare_btn.setChecked(False); self.compare_btn.setEnabled(False)
         self.canvas.set_image(image)
         self.statusBar().showMessage(str(path))
         self.analyze_scene()
@@ -376,6 +379,7 @@ class MainWindow(DropWindow):
         self.source_path = None
         self.current_project = None
         self.render_image = None
+        self.compare_btn.setChecked(False); self.compare_btn.setEnabled(False)
         self.canvas.set_image(self.source_image)
         self.analyze_scene()
 
@@ -459,16 +463,30 @@ class MainWindow(DropWindow):
         quality = self.quality.currentText()
         steps = {"Draft": 4, "Standard": 8, "High": 12, "Ultra": 20}.get(quality, 8)
         dimensions = self._output_dimensions()
-        self.last_render_request = {"quality": quality, "steps": steps, "profile": hw.recommended_profile, "dimensions": dimensions}
         profile = hw.recommended_profile if hw.recommended_profile in {"quality", "balanced", "low-memory", "low-memory-12gb"} else "low-memory-12gb"
+        target_dimensions = dimensions or source.size
+        generation_dimensions = smart_generation_size(target_dimensions, profile, quality)
+        self.last_render_request = {
+            "quality": quality, "steps": steps, "profile": profile,
+            "target_dimensions": target_dimensions, "generation_dimensions": generation_dimensions,
+            "smart_render": generation_dimensions != target_dimensions,
+        }
 
         def job():
             result = QwenEngine(active).render(
                 RenderRequest(source=source, prompt=prompt, quality=quality, steps=steps, memory_profile=profile,
-                              width=dimensions[0] if dimensions else None, height=dimensions[1] if dimensions else None),
+                              width=generation_dimensions[0], height=generation_dimensions[1]),
                 cancel_check=self.render_cancel_event.is_set,
                 progress=lambda done, total: worker.signals.progress.emit(done, total),
             )
+            if result.image.size != target_dimensions:
+                result.image = LanczosUpscaleBackend().resize_to(result.image, target_dimensions)
+                result.width, result.height = result.image.size
+                result.metadata["smart_render"] = {
+                    "generation_size": generation_dimensions,
+                    "output_size": target_dimensions,
+                    "profile": profile,
+                }
             fidelity = compare_source_and_render(source, result.image)
             return result, fidelity
 
@@ -477,7 +495,7 @@ class MainWindow(DropWindow):
         worker.signals.result.connect(self._render_done)
         worker.signals.error.connect(self._render_error)
         worker.signals.finished.connect(lambda: self._set_busy(False, "Ready"))
-        self._set_busy(True, f"Rendering locally with Qwen Image · {steps} steps...")
+        self._set_busy(True, f"Smart Render · Qwen {generation_dimensions[0]}×{generation_dimensions[1]} → {target_dimensions[0]}×{target_dimensions[1]} · {steps} steps...")
         self.progress.setRange(0, steps)
         self.progress.setValue(0)
         self.thread_pool.start(worker)
