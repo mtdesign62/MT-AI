@@ -157,14 +157,38 @@ class ModelManager:
             progress("Download complete")
         return installed
 
-    def import_existing(self, source: str | Path) -> InstalledModel:
-        """Register an existing local Qwen Image 2.1 snapshot without copying it."""
+    @staticmethod
+    def _resolve_existing_snapshot(source: str | Path) -> Path:
+        """Resolve a model folder or Hugging Face cache root to a usable snapshot."""
         path = Path(source).expanduser().resolve()
         if not path.is_dir():
             raise FileNotFoundError(str(path))
+        if (path / "model_index.json").is_file():
+            return path
+
+        # Hugging Face caches store real model files below snapshots/<commit>/.
+        # Also accept a user-selected parent directory, but keep the search bounded
+        # to model_index.json files instead of copying or re-downloading anything.
+        candidates = [
+            p.parent for p in path.glob("**/model_index.json")
+            if ".offload" not in p.parts
+        ]
+        if not candidates:
+            raise ValueError(
+                "No Qwen model snapshot containing model_index.json was found in the selected folder. "
+                "You may select either the model folder or its Hugging Face cache parent."
+            )
+        # Prefer complete HF snapshots and the newest candidate when several exist.
+        candidates.sort(
+            key=lambda p: (("snapshots" in p.parts), (p / "model_index.json").stat().st_mtime),
+            reverse=True,
+        )
+        return candidates[0]
+
+    def import_existing(self, source: str | Path) -> InstalledModel:
+        """Register an existing local Qwen Image 2.1 snapshot without copying it."""
+        path = self._resolve_existing_snapshot(source)
         model_index = path / "model_index.json"
-        if not model_index.exists():
-            raise ValueError("Selected folder does not contain model_index.json")
         try:
             metadata = json.loads(model_index.read_text(encoding="utf-8"))
         except Exception as exc:
