@@ -72,29 +72,28 @@ class QwenEngine:
         # Leave headroom for Windows/DWM and diffusion activations; 12 GB cards use
         # aggressive CPU/disk offload, while larger cards progressively keep more on GPU.
         if memory_profile in {"low-memory-12gb", "low-memory"}:
-            from pathlib import Path
+            # Do not combine Accelerate device_map/meta initialization with later
+            # module moves. Some Qwen/diffusers combinations leave parameters on
+            # the meta device and then fail with "Cannot copy out of meta tensor".
+            # Load real CPU tensors first, then let Diffusers install sequential
+            # CPU-offload hooks. This is slower to load but substantially safer on
+            # 12-16 GB Windows GPUs and leaves VRAM headroom for DWM/the desktop.
+            kwargs["low_cpu_mem_usage"] = False
 
-            free_bytes, total_bytes = torch.cuda.mem_get_info(0)
-            total_gib = total_bytes / (1024 ** 3)
-            if total_gib < 11.0:
-                raise InferenceUnavailableError("MT AI requires an NVIDIA CUDA GPU with at least 12 GB VRAM")
-            gpu_budget = max(8, min(18, int(total_gib - (2.5 if total_gib < 14 else 3.0))))
-            cpu_budget = "28GiB" if memory_profile == "low-memory-12gb" else "24GiB"
-            offload_dir = Path(self.model.local_path).parent / ".offload"
-            offload_dir.mkdir(parents=True, exist_ok=True)
-            kwargs.update(
-                {
-                    "device_map": "balanced",
-                    "max_memory": {0: f"{gpu_budget}GiB", "cpu": cpu_budget},
-                    "offload_folder": str(offload_dir),
-                    "offload_state_dict": True,
-                }
-            )
         self.pipe = DiffusionPipeline.from_pretrained(self.model.local_path, **kwargs)
         if memory_profile in {"low-memory-12gb", "low-memory"}:
-            # device_map already placed/offloaded components during loading. Calling
-            # enable_model_cpu_offload() as well would fight Accelerate hooks.
-            pass
+            if hasattr(self.pipe, "enable_attention_slicing"):
+                self.pipe.enable_attention_slicing()
+            if hasattr(self.pipe, "enable_vae_slicing"):
+                self.pipe.enable_vae_slicing()
+            if hasattr(self.pipe, "enable_vae_tiling"):
+                self.pipe.enable_vae_tiling()
+            if hasattr(self.pipe, "enable_sequential_cpu_offload"):
+                self.pipe.enable_sequential_cpu_offload()
+            elif hasattr(self.pipe, "enable_model_cpu_offload"):
+                self.pipe.enable_model_cpu_offload()
+            else:
+                self.pipe.to("cuda")
         else:
             self.pipe.to("cuda")
         if hasattr(self.pipe, "set_progress_bar_config"):
