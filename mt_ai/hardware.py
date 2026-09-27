@@ -15,6 +15,7 @@ class HardwareProfile:
     python: str
     cpu: str
     ram_total_mb: int
+    ram_available_mb: int
     disk_free_mb: int
     cuda_available: bool
     cuda_version: str | None
@@ -49,7 +50,9 @@ def detect_hardware(path_for_disk: Path | None = None) -> HardwareProfile:
     except Exception:
         pass
 
-    ram_total = int(psutil.virtual_memory().total / 1024 / 1024)
+    vm = psutil.virtual_memory()
+    ram_total = int(vm.total / 1024 / 1024)
+    ram_available = int(vm.available / 1024 / 1024)
     disk_root = path_for_disk or Path.home()
     try:
         disk_free = int(shutil.disk_usage(disk_root).free / 1024 / 1024)
@@ -75,6 +78,7 @@ def detect_hardware(path_for_disk: Path | None = None) -> HardwareProfile:
         python=platform.python_version(),
         cpu=platform.processor() or platform.machine(),
         ram_total_mb=ram_total,
+        ram_available_mb=ram_available,
         disk_free_mb=disk_free,
         cuda_available=cuda_available,
         cuda_version=cuda_version,

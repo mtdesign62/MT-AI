@@ -7,9 +7,13 @@ from typing import Any, Callable
 
 from PIL import Image
 
+from mt_ai.logging_config import get_logger
 from mt_ai.models.schemas import InstalledModel
 
 from .types import RenderRequest, RenderResult
+
+
+LOGGER = get_logger("inference.qwen")
 
 
 class InferenceUnavailableError(RuntimeError):
@@ -80,6 +84,7 @@ class QwenEngine:
             # 12-16 GB Windows GPUs and leaves VRAM headroom for DWM/the desktop.
             kwargs["low_cpu_mem_usage"] = False
 
+        LOGGER.info("Loading Qwen pipeline path=%s profile=%s", self.model.local_path, memory_profile)
         self.pipe = DiffusionPipeline.from_pretrained(self.model.local_path, **kwargs)
         if memory_profile in {"low-memory-12gb", "low-memory"}:
             if hasattr(self.pipe, "enable_vae_slicing"):
@@ -168,6 +173,27 @@ class QwenEngine:
             if request.width and request.height
             else fit_dimensions(request.source.size, request.quality)
         )
+        try:
+            free_bytes, total_bytes = torch.cuda.mem_get_info(0)
+            free_vram_mb = int(free_bytes / 1024 / 1024)
+            total_vram_mb = int(total_bytes / 1024 / 1024)
+        except Exception:
+            free_vram_mb = None
+            total_vram_mb = None
+        if status:
+            status(
+                f"Preparing image · {int(width)}×{int(height)} · "
+                f"free VRAM {free_vram_mb or '?'} MB"
+            )
+        LOGGER.info(
+            "Render start size=%sx%s steps=%s profile=%s free_vram_mb=%s total_vram_mb=%s",
+            width,
+            height,
+            request.steps,
+            request.memory_profile,
+            free_vram_mb,
+            total_vram_mb,
+        )
         generator = torch.Generator(device="cuda").manual_seed(request.seed)
         def on_step_end(pipe, step_index, timestep, callback_kwargs):
             if cancel_check and cancel_check():
@@ -187,21 +213,32 @@ class QwenEngine:
         }
         call_kwargs = self._filtered_call_kwargs(kwargs)
         start = time.perf_counter()
+        if status:
+            status(f"Diffusion · 0/{request.steps}")
         try:
             output = self.pipe(**call_kwargs)
         except RuntimeError as exc:
             if "out of memory" in str(exc).lower():
+                LOGGER.exception("CUDA OOM during Qwen render")
                 try:
                     torch.cuda.empty_cache()
                 finally:
                     raise InferenceOOMError(
-                        "CUDA out of memory. Switch to Low Memory or a smaller quality preset."
+                        "CUDA out of memory. MT AI can retry once at a smaller internal resolution."
                     ) from exc
             raise
         duration = time.perf_counter() - start
         if cancel_check and cancel_check():
             raise RenderCancelledError("Render cancelled")
+        if status:
+            status("Post-processing · decoding result")
         image = output.images[0].convert("RGB")
+        LOGGER.info(
+            "Render complete size=%sx%s duration=%.2fs",
+            image.width,
+            image.height,
+            duration,
+        )
         return RenderResult(
             image=image,
             seed=request.seed,
@@ -211,5 +248,10 @@ class QwenEngine:
             duration_seconds=duration,
             model_repo_id=self.model.repo_id,
             model_revision=self.model.revision,
-            metadata={"memory_profile": request.memory_profile, "quality": request.quality},
+            metadata={
+                "memory_profile": request.memory_profile,
+                "quality": request.quality,
+                "vram_free_mb_before": free_vram_mb,
+                "vram_total_mb": total_vram_mb,
+            },
         )

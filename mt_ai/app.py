@@ -4,7 +4,8 @@ import sys
 import traceback
 from pathlib import Path
 
-from mt_ai.version import APP_NAME
+from mt_ai.logging_config import configure_logging, get_logger, install_exception_hook
+from mt_ai.version import APP_NAME, APP_VERSION
 
 DARK_STYLE = """
 QWidget { background: #171b22; color: #e7ebf0; font-size: 13px; }
@@ -52,6 +53,10 @@ def ai_runtime_self_test() -> int:
 
 
 def main() -> int:
+    log_path = configure_logging()
+    install_exception_hook()
+    logger = get_logger("app")
+    logger.info("Starting MT AI %s; log=%s", APP_VERSION, log_path)
     if "--self-test-ai" in sys.argv:
         return ai_runtime_self_test()
 
@@ -68,7 +73,9 @@ def main() -> int:
     app.setStyleSheet(DARK_STYLE)
     window = MainWindow()
     window.show()
-    return app.exec()
+    exit_code = app.exec()
+    logger.info("MT AI exited with code %s", exit_code)
+    return exit_code
 
 
 if __name__ == "__main__":
