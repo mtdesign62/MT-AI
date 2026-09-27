@@ -49,6 +49,7 @@ class WorkerSignals(QObject):
     result = Signal(object)
     error = Signal(str)
     progress = Signal(int, int)
+    status = Signal(str)
     finished = Signal()
 
 
@@ -100,6 +101,8 @@ class MainWindow(DropWindow):
         self.current_mode = "Interior"
         self.render_cancel_event = Event()
         self.last_render_request: dict | None = None
+        self.qwen_engine: QwenEngine | None = None
+        self.qwen_engine_path: str | None = None
         self._build_ui()
         self._build_menu()
         self.language = current_language()
@@ -477,11 +480,17 @@ class MainWindow(DropWindow):
         }
 
         def job():
-            result = QwenEngine(active).render(
+            if self.qwen_engine is None or self.qwen_engine_path != active.local_path:
+                if self.qwen_engine is not None:
+                    self.qwen_engine.unload()
+                self.qwen_engine = QwenEngine(active)
+                self.qwen_engine_path = active.local_path
+            result = self.qwen_engine.render(
                 RenderRequest(source=source, prompt=prompt, quality=quality, steps=steps, memory_profile=profile,
                               width=generation_dimensions[0], height=generation_dimensions[1]),
                 cancel_check=self.render_cancel_event.is_set,
                 progress=lambda done, total: worker.signals.progress.emit(done, total),
+                status=worker.signals.status.emit,
             )
             if result.image.size != target_dimensions:
                 result.image = LanczosUpscaleBackend().resize_to(result.image, target_dimensions)
@@ -496,9 +505,10 @@ class MainWindow(DropWindow):
 
         worker = FunctionWorker(job)
         worker.signals.progress.connect(self._render_progress)
+        worker.signals.status.connect(self._render_status)
         worker.signals.result.connect(self._render_done)
         worker.signals.error.connect(self._render_error)
-        worker.signals.finished.connect(lambda: self._set_busy(False, "Ready"))
+        worker.signals.finished.connect(lambda: self._set_busy(False))
         self._set_busy(True, f"Smart Render · Qwen {generation_dimensions[0]}×{generation_dimensions[1]} → {target_dimensions[0]}×{target_dimensions[1]} · {steps} steps...")
         self.progress.setRange(0, steps)
         self.progress.setValue(0)
@@ -508,6 +518,15 @@ class MainWindow(DropWindow):
         self.render_cancel_event.set()
         self.cancel_btn.setEnabled(False)
         self.statusBar().showMessage("Cancelling render at the next diffusion step...")
+
+    def _render_status(self, message: str) -> None:
+        if message.startswith("Loading Qwen"):
+            self.progress.setRange(0, 0)
+        else:
+            steps = int((self.last_render_request or {}).get("steps", 1))
+            self.progress.setRange(0, max(1, steps))
+            self.progress.setValue(0)
+        self.statusBar().showMessage(message)
 
     def _render_progress(self, done: int, total: int) -> None:
         self.progress.setRange(0, max(1, total))
@@ -552,7 +571,14 @@ class MainWindow(DropWindow):
         if path:
             self.render_image.save(path)
 
+    def _model_changed(self) -> None:
+        self._refresh_model_status()
+        if self.qwen_engine is not None:
+            self.qwen_engine.unload()
+        self.qwen_engine = None
+        self.qwen_engine_path = None
+
     def open_model_manager(self) -> None:
         dlg = ModelManagerDialog(self.manager, self)
-        dlg.model_changed.connect(self._refresh_model_status)
+        dlg.model_changed.connect(self._model_changed)
         dlg.exec()
