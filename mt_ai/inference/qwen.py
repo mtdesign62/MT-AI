@@ -82,18 +82,33 @@ class QwenEngine:
 
         self.pipe = DiffusionPipeline.from_pretrained(self.model.local_path, **kwargs)
         if memory_profile in {"low-memory-12gb", "low-memory"}:
-            if hasattr(self.pipe, "enable_attention_slicing"):
-                self.pipe.enable_attention_slicing()
             if hasattr(self.pipe, "enable_vae_slicing"):
                 self.pipe.enable_vae_slicing()
             if hasattr(self.pipe, "enable_vae_tiling"):
                 self.pipe.enable_vae_tiling()
-            if hasattr(self.pipe, "enable_sequential_cpu_offload"):
-                self.pipe.enable_sequential_cpu_offload()
-            elif hasattr(self.pipe, "enable_model_cpu_offload"):
-                self.pipe.enable_model_cpu_offload()
+
+            if memory_profile == "low-memory-12gb":
+                # 12 GB cards need the most conservative path. Sequential offload
+                # minimizes peak VRAM at the cost of speed.
+                if hasattr(self.pipe, "enable_attention_slicing"):
+                    self.pipe.enable_attention_slicing()
+                if hasattr(self.pipe, "enable_sequential_cpu_offload"):
+                    self.pipe.enable_sequential_cpu_offload()
+                elif hasattr(self.pipe, "enable_model_cpu_offload"):
+                    self.pipe.enable_model_cpu_offload()
+                else:
+                    self.pipe.to("cuda")
             else:
-                self.pipe.to("cuda")
+                # 14-20 GB cards (for example RTX 5060 Ti 16 GB) have enough room
+                # for model-level CPU offload. It avoids the per-layer PCIe churn
+                # of sequential offload and is substantially smoother/faster while
+                # still leaving VRAM headroom for Windows and diffusion activations.
+                if hasattr(self.pipe, "enable_model_cpu_offload"):
+                    self.pipe.enable_model_cpu_offload()
+                elif hasattr(self.pipe, "enable_sequential_cpu_offload"):
+                    self.pipe.enable_sequential_cpu_offload()
+                else:
+                    self.pipe.to("cuda")
         else:
             self.pipe.to("cuda")
         if hasattr(self.pipe, "set_progress_bar_config"):
