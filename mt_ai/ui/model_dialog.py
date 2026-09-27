@@ -96,10 +96,25 @@ class ModelManagerDialog(QDialog):
 
     def refresh(self) -> None:
         active = self.manager.active()
-        self.active_label.setText(f"Active: {active.repo_id}  {active.version}  {active.revision[:12]}" if active else "Active: none")
+        rewriter = self.manager.active("qwen-image-prompt-rewriter")
+        active_text = (
+            f"Active image: {active.repo_id}  {active.version}  {active.revision[:12]}"
+            if active else "Active image: none"
+        )
+        rewriter_text = (
+            f"Prompt rewriter: {rewriter.repo_id}  {rewriter.revision[:12]}"
+            if rewriter else "Prompt rewriter: not installed / not detected"
+        )
+        self.active_label.setText(active_text + "\n" + rewriter_text)
         self.installed_list.clear()
-        for model in self.manager.list_installed():
-            self.installed_list.addItem(f"{model.repo_id} | v{model.version} | {model.revision[:12]}")
+        self._installed_models = (
+            self.manager.list_installed("qwen-image")
+            + self.manager.list_installed("qwen-image-prompt-rewriter")
+        )
+        for model in self._installed_models:
+            self.installed_list.addItem(
+                f"{model.family} | {model.repo_id} | v{model.version} | {model.revision[:12]}"
+            )
 
     def import_existing(self) -> None:
         folder = QFileDialog.getExistingDirectory(self, "Select existing Qwen Image 2.1 folder")
@@ -178,9 +193,13 @@ class ModelManagerDialog(QDialog):
         self._run(fn, done)
 
     def activate_selected(self) -> None:
-        row = self.installed_list.currentRow(); items = self.manager.list_installed()
-        if row < 0 or row >= len(items): return
-        self.manager.activate(items[row]); self.model_changed.emit(); self.refresh()
+        row = self.installed_list.currentRow()
+        items = getattr(self, "_installed_models", [])
+        if row < 0 or row >= len(items):
+            return
+        self.manager.activate(items[row])
+        self.model_changed.emit()
+        self.refresh()
 
     def rollback(self) -> None:
         try:
