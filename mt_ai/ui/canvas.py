@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from PIL import Image
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, Signal, Signal
 from PySide6.QtGui import QImage, QPixmap
 from PySide6.QtWidgets import QLabel, QScrollArea
 
@@ -43,11 +43,16 @@ class ImageCanvas(QScrollArea):
         self._scale = 1.0
         self.setStyleSheet("QScrollArea { background: #11151b; border: 1px solid #2a313d; }")
 
+    def _request_image(self) -> None:
+        if self._image is None and self._compare_original is None and self._compare_rendered is None:
+            self.image_requested.emit()
+
     def set_image(self, image: Image.Image) -> None:
         self._compare_original = None
         self._compare_rendered = None
         self._image = image.copy()
         self._scale = 1.0
+        self.label.setCursor(Qt.CursorShape.ArrowCursor)
         self._refresh()
 
     def set_comparison(self, original: Image.Image, rendered: Image.Image, percent: int = 50) -> None:
@@ -66,6 +71,7 @@ class ImageCanvas(QScrollArea):
         self._image = self._compare_original = self._compare_rendered = None
         self.label.setPixmap(QPixmap())
         self.label.setText("Drop a SketchUp / 3ds Max / Blender screenshot here")
+        self.label.setCursor(Qt.CursorShape.PointingHandCursor)
 
     def _display_image(self) -> Image.Image | None:
         if self._compare_original is None or self._compare_rendered is None:
