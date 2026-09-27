@@ -6,12 +6,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
 
-from huggingface_hub import HfApi, snapshot_download
+from huggingface_hub import HfApi, snapshot_download, try_to_load_from_cache
 
 from mt_ai.config import AppPaths, SettingsStore
 
 from .provider import HuggingFaceQwenProvider
-from .registry import DEFAULT_IMAGE_MODEL
+from .registry import BUILTIN_MODELS, DEFAULT_IMAGE_MODEL, DEFAULT_PROMPT_REWRITER
 from .schemas import InstalledModel, ModelCandidate, ModelSpec
 
 ProgressCallback = Callable[[str], None]
@@ -75,9 +75,39 @@ class ModelManager:
         active_path = data.get("active_models", {}).get(family)
         if family == "qwen-image" and not active_path:
             active_path = data.get("active_model_path")
-        if not active_path:
+        if active_path:
+            model = self._read_manifest(Path(active_path))
+            if model:
+                return model
+
+        # Recover gracefully after settings loss/upgrades: use a single registered
+        # model, or discover the official model in the local Hugging Face cache.
+        installed = self.list_installed(family)
+        if len(installed) == 1:
+            self.activate(installed[0])
+            return installed[0]
+        cached = self.discover_cached(family)
+        if cached is not None:
+            self.activate(cached)
+            return cached
+        return None
+
+    def discover_cached(self, family: str) -> InstalledModel | None:
+        """Register an already-downloaded official model from the local HF cache only."""
+        spec = BUILTIN_MODELS.get(family)
+        if spec is None:
             return None
-        return self._read_manifest(Path(active_path))
+        marker = "model_index.json" if spec.family == DEFAULT_IMAGE_MODEL.family else "system_prompt.txt"
+        try:
+            cached = try_to_load_from_cache(spec.repo_id, marker)
+        except Exception:
+            return None
+        if not isinstance(cached, str):
+            return None
+        try:
+            return self.import_existing(Path(cached).parent)
+        except (FileNotFoundError, ValueError):
+            return None
 
     def install_spec(
         self,
@@ -159,50 +189,77 @@ class ModelManager:
 
     @staticmethod
     def _resolve_existing_snapshot(source: str | Path) -> Path:
-        """Resolve a model folder or Hugging Face cache root to a usable snapshot."""
+        """Resolve a Qwen model folder or Hugging Face cache root to a usable snapshot."""
         path = Path(source).expanduser().resolve()
         if not path.is_dir():
             raise FileNotFoundError(str(path))
-        if (path / "model_index.json").is_file():
+
+        def is_model_dir(candidate: Path) -> bool:
+            is_image = (candidate / "model_index.json").is_file()
+            is_rewriter = (candidate / "system_prompt.txt").is_file() and (
+                (candidate / "config.json").is_file()
+                or (candidate / "processor_config.json").is_file()
+                or (candidate / "preprocessor_config.json").is_file()
+            )
+            return is_image or is_rewriter
+
+        if is_model_dir(path):
             return path
 
-        # Hugging Face caches store real model files below snapshots/<commit>/.
-        # Also accept a user-selected parent directory, but keep the search bounded
-        # to model_index.json files instead of copying or re-downloading anything.
-        candidates = [
-            p.parent for p in path.glob("**/model_index.json")
-            if ".offload" not in p.parts
-        ]
+        candidates: list[Path] = []
+        seen: set[Path] = set()
+        for marker in ("model_index.json", "system_prompt.txt"):
+            for marker_path in path.glob(f"**/{marker}"):
+                candidate = marker_path.parent
+                if candidate in seen or ".offload" in candidate.parts:
+                    continue
+                seen.add(candidate)
+                if is_model_dir(candidate):
+                    candidates.append(candidate)
         if not candidates:
             raise ValueError(
-                "No Qwen model snapshot containing model_index.json was found in the selected folder. "
-                "You may select either the model folder or its Hugging Face cache parent."
+                "No supported Qwen Image 2.1 or PE-I2I snapshot was found in the selected folder. "
+                "You may select the model folder, snapshots folder, or its Hugging Face cache parent."
             )
-        # Prefer complete HF snapshots and the newest candidate when several exist.
         candidates.sort(
-            key=lambda p: (("snapshots" in p.parts), (p / "model_index.json").stat().st_mtime),
+            key=lambda p: (
+                "snapshots" in p.parts,
+                max(
+                    (p / name).stat().st_mtime
+                    for name in ("model_index.json", "system_prompt.txt")
+                    if (p / name).exists()
+                ),
+            ),
             reverse=True,
         )
         return candidates[0]
 
     def import_existing(self, source: str | Path) -> InstalledModel:
-        """Register an existing local Qwen Image 2.1 snapshot without copying it."""
+        """Register an existing local Qwen image or PE-I2I snapshot without copying it."""
         path = self._resolve_existing_snapshot(source)
         model_index = path / "model_index.json"
-        try:
-            metadata = json.loads(model_index.read_text(encoding="utf-8"))
-        except Exception as exc:
-            raise ValueError(f"Invalid model_index.json: {exc}") from exc
-        pipeline_class = metadata.get("_class_name")
-        if pipeline_class != DEFAULT_IMAGE_MODEL.required_pipeline:
-            raise ValueError(
-                f"Expected {DEFAULT_IMAGE_MODEL.required_pipeline}, found {pipeline_class or 'unknown pipeline'}"
-            )
+        if model_index.exists():
+            try:
+                metadata = json.loads(model_index.read_text(encoding="utf-8"))
+            except Exception as exc:
+                raise ValueError(f"Invalid model_index.json: {exc}") from exc
+            pipeline_class = metadata.get("_class_name")
+            if pipeline_class != DEFAULT_IMAGE_MODEL.required_pipeline:
+                raise ValueError(
+                    f"Expected {DEFAULT_IMAGE_MODEL.required_pipeline}, found {pipeline_class or 'unknown pipeline'}"
+                )
+            spec = DEFAULT_IMAGE_MODEL
+        elif (path / "system_prompt.txt").exists():
+            spec = DEFAULT_PROMPT_REWRITER
+            pipeline_class = None
+        else:
+            raise ValueError("Selected folder is not a supported MT AI Qwen model")
+
         revision = path.name
         installed = InstalledModel(
-            family=DEFAULT_IMAGE_MODEL.family,
-            repo_id=DEFAULT_IMAGE_MODEL.repo_id,
-            version=DEFAULT_IMAGE_MODEL.version,
+            family=spec.family,
+            repo_id=spec.repo_id,
+            version=spec.version,
             revision=revision,
             local_path=str(path),
             pipeline_class=pipeline_class,
