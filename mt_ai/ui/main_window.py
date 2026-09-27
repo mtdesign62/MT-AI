@@ -134,7 +134,7 @@ class MainWindow(DropWindow):
         center = QWidget()
         center_l = QVBoxLayout(center)
         self.canvas = ImageCanvas()
-        self.canvas.clicked.connect(self.choose_image)
+        self.canvas.image_requested.connect(self.choose_image)
         self.compare_slider = QSlider(Qt.Orientation.Horizontal)
         self.compare_slider.setRange(0, 100)
         self.compare_slider.setValue(50)
