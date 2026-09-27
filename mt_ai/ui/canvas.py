@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from PIL import Image
 
-from PySide6.QtCore import Qt, Signal, Signal
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QImage, QPixmap
 from PySide6.QtWidgets import QLabel, QScrollArea
 
@@ -24,7 +24,7 @@ class ClickableLabel(QLabel):
 
 
 class ImageCanvas(QScrollArea):
-    clicked = Signal()
+    image_requested = Signal()
 
     def __init__(self) -> None:
         super().__init__()
@@ -32,7 +32,7 @@ class ImageCanvas(QScrollArea):
         self.label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.label.setCursor(Qt.CursorShape.PointingHandCursor)
         self.label.setToolTip("Click to open an image, or drag and drop a screenshot here.")
-        self.label.clicked.connect(self.clicked.emit)
+        self.label.clicked.connect(self._request_image)
         self.label.setMinimumSize(640, 480)
         self.setWidget(self.label)
         self.setWidgetResizable(True)
@@ -60,6 +60,7 @@ class ImageCanvas(QScrollArea):
         self._compare_original = original.copy()
         self._compare_rendered = rendered.copy()
         self._compare_percent = max(0, min(100, int(percent)))
+        self.label.setCursor(Qt.CursorShape.ArrowCursor)
         self._refresh()
 
     def set_comparison_percent(self, percent: int) -> None:
