@@ -7,7 +7,13 @@ def _round32(value: float) -> int:
     return max(256, int(round(value / 32.0)) * 32)
 
 
-def smart_generation_size(target: tuple[int, int], profile: str, quality: str) -> tuple[int, int]:
+def smart_generation_size(
+    target: tuple[int, int],
+    profile: str,
+    quality: str,
+    *,
+    free_vram_mb: int | None = None,
+) -> tuple[int, int]:
     """Choose a diffusion-safe internal size; final output is resized to the exact target."""
     tw, th = target
     limits = {
@@ -17,6 +23,17 @@ def smart_generation_size(target: tuple[int, int], profile: str, quality: str) -
         "quality": {"Draft": 1280, "Standard": 1536, "High": 1792, "Ultra": 2048},
     }
     max_side = limits.get(profile, limits["low-memory-12gb"]).get(quality, 1024)
+    # Runtime free VRAM is more useful than GPU model name alone. Clamp the
+    # diffusion envelope when Windows/DWM/other apps are already using VRAM.
+    if free_vram_mb is not None:
+        if free_vram_mb < 3072:
+            max_side = min(max_side, 896)
+        elif free_vram_mb < 4096:
+            max_side = min(max_side, 1024)
+        elif free_vram_mb < 6144:
+            max_side = min(max_side, 1152)
+        elif free_vram_mb < 8192:
+            max_side = min(max_side, 1344)
     if max(tw, th) <= max_side:
         return _round32(tw), _round32(th)
     scale = max_side / max(tw, th)
