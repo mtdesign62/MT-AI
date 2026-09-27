@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from PIL import Image
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QImage, QPixmap
 from PySide6.QtWidgets import QLabel, QScrollArea
 
@@ -14,11 +14,25 @@ def pil_to_qpixmap(image: Image.Image) -> QPixmap:
     return QPixmap.fromImage(qimg)
 
 
+class ClickableLabel(QLabel):
+    clicked = Signal()
+
+    def mouseReleaseEvent(self, event) -> None:
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.clicked.emit()
+        super().mouseReleaseEvent(event)
+
+
 class ImageCanvas(QScrollArea):
+    clicked = Signal()
+
     def __init__(self) -> None:
         super().__init__()
-        self.label = QLabel("Drop a SketchUp / 3ds Max / Blender screenshot here")
+        self.label = ClickableLabel("Drop a SketchUp / 3ds Max / Blender screenshot here")
         self.label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.label.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.label.setToolTip("Click to open an image, or drag and drop a screenshot here.")
+        self.label.clicked.connect(self.clicked.emit)
         self.label.setMinimumSize(640, 480)
         self.setWidget(self.label)
         self.setWidgetResizable(True)
