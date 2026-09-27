@@ -117,10 +117,19 @@ class ModelManagerDialog(QDialog):
             )
 
     def import_existing(self) -> None:
-        folder = QFileDialog.getExistingDirectory(self, "Select existing Qwen Image 2.1 folder")
+        initial = self.manager.settings.get(
+            "model_browser_path",
+            r"G:\Qwen AI\Qwen-Image-2.1",
+        )
+        folder = QFileDialog.getExistingDirectory(
+            self,
+            "Select existing Qwen Image 2.1 folder",
+            initial,
+        )
         if not folder:
             return
         try:
+            self.manager.settings.set("model_browser_path", folder)
             model = self.manager.import_existing(folder)
             self.manager.activate(model)
             self.status_label.setText("Existing model imported and activated")
@@ -135,14 +144,15 @@ class ModelManagerDialog(QDialog):
         dialog.resize(760, 430)
         layout = QVBoxLayout(dialog)
         layout.addWidget(QLabel(
-            "Nếu chưa có model, mở Windows PowerShell và chạy lần lượt các lệnh dưới đây. "
-            "Bạn có thể đổi D:\\MT-AI\\Models\\Qwen-Image-2.1 thành thư mục khác nếu muốn."
+            "Qwen Image 2.1 là model Qwen Image chính thức mới nhất mà MT AI hỗ trợ ở bản này. "
+            "Nếu chưa có model, mở Windows PowerShell và chạy các lệnh dưới đây. "
+            "Bạn có thể đổi G:\\Qwen AI\\Qwen-Image-2.1 thành thư mục khác nếu muốn."
         ))
         commands = QPlainTextEdit()
         commands.setReadOnly(True)
         commands.setPlainText(
             'py -m pip install -U "huggingface_hub[cli]"\n\n'
-            'hf download Qwen/Qwen-Image-2.1 --local-dir "D:\\MT-AI\\Models\\Qwen-Image-2.1"'
+            'hf download Qwen/Qwen-Image-2.1 --local-dir "G:\\Qwen AI\\Qwen-Image-2.1"'
         )
         layout.addWidget(commands)
         layout.addWidget(QLabel(

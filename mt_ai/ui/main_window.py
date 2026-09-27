@@ -31,9 +31,12 @@ from PySide6.QtWidgets import (
 
 from mt_ai.analysis.fidelity import compare_source_and_render
 from mt_ai.analysis.scene import SceneAnalyzer
+from mt_ai.diagnostics import diagnostics_text
 from mt_ai.hardware import detect_hardware
+from mt_ai.logging_config import get_logger
+from mt_ai.memory import adaptive_memory_profile, oom_retry_size
 from mt_ai.i18n import current_language, localize_widget, relocalize_widget, tr
-from mt_ai.inference.qwen import QwenEngine
+from mt_ai.inference.qwen import InferenceOOMError, QwenEngine
 from mt_ai.inference.types import RenderRequest
 from mt_ai.models.manager import ModelManager
 from mt_ai.projects import ProjectManager
@@ -42,6 +45,7 @@ from mt_ai.version import APP_NAME, APP_SUBTITLE, APP_VERSION
 from mt_ai.upscale import LanczosUpscaleBackend, smart_generation_size
 
 from .canvas import ImageCanvas
+from .diagnostics_dialog import DiagnosticsDialog
 from .model_dialog import ModelManagerDialog
 
 
@@ -90,6 +94,7 @@ class MainWindow(DropWindow):
         self.setWindowTitle(f"{APP_NAME} {APP_VERSION} — {APP_SUBTITLE}")
         self.resize(1500, 920)
         self.manager = ModelManager()
+        self.logger = get_logger("ui")
         self.project_manager = ProjectManager()
         self.current_project = None
         self.scene_analyzer = SceneAnalyzer()
@@ -281,11 +286,16 @@ class MainWindow(DropWindow):
         tools = self.menuBar().addMenu("Tools")
         models = QAction("Model Manager", self)
         models.triggered.connect(self.open_model_manager)
-        tools.addAction(models)
+        diagnostics = QAction("Diagnostics", self)
+        diagnostics.triggered.connect(self.open_diagnostics)
+        tools.addActions([models, diagnostics])
         language_menu = self.menuBar().addMenu("Language")
         english = QAction("English", self); english.triggered.connect(lambda: self.set_language("en"))
         vietnamese = QAction("Vietnamese", self); vietnamese.triggered.connect(lambda: self.set_language("vi"))
         language_menu.addActions([english, vietnamese])
+
+    def open_diagnostics(self) -> None:
+        DiagnosticsDialog(diagnostics_text(), self).exec()
 
     def set_language(self, language: str) -> None:
         self.language = "vi" if language == "vi" else "en"
@@ -305,8 +315,15 @@ class MainWindow(DropWindow):
     def _refresh_hardware(self) -> None:
         hw = detect_hardware()
         gpu = hw.gpu_name or "No CUDA GPU"
-        vram = f"{hw.vram_total_mb} MB VRAM" if hw.vram_total_mb else "VRAM unavailable"
-        self.hardware_label.setText(f"{gpu}\n{vram} · profile {hw.recommended_profile}")
+        vram = (
+            f"{hw.vram_free_mb}/{hw.vram_total_mb} MB VRAM free/total"
+            if hw.vram_total_mb
+            else "VRAM unavailable"
+        )
+        ram = f"{hw.ram_available_mb}/{hw.ram_total_mb} MB RAM free/total"
+        self.hardware_label.setText(
+            f"{gpu}\n{vram}\n{ram} · profile {hw.recommended_profile}"
+        )
 
     def _refresh_model_status(self) -> None:
         active = self.manager.active()
@@ -470,9 +487,20 @@ class MainWindow(DropWindow):
         quality = self.quality.currentData() or "Standard"
         steps = {"Draft": 4, "Standard": 8, "High": 12, "Ultra": 20}.get(quality, 8)
         dimensions = self._output_dimensions()
-        profile = hw.recommended_profile if hw.recommended_profile in {"quality", "balanced", "low-memory", "low-memory-12gb"} else "low-memory-12gb"
+        profile = adaptive_memory_profile(
+            hw.recommended_profile,
+            hw.vram_total_mb,
+            hw.vram_free_mb,
+        )
+        if profile not in {"quality", "balanced", "low-memory", "low-memory-12gb"}:
+            profile = "low-memory-12gb"
         target_dimensions = dimensions or source.size
-        generation_dimensions = smart_generation_size(target_dimensions, profile, quality)
+        generation_dimensions = smart_generation_size(
+            target_dimensions,
+            profile,
+            quality,
+            free_vram_mb=hw.vram_free_mb,
+        )
         self.last_render_request = {
             "quality": quality, "steps": steps, "profile": profile,
             "target_dimensions": target_dimensions, "generation_dimensions": generation_dimensions,
@@ -485,21 +513,59 @@ class MainWindow(DropWindow):
                     self.qwen_engine.unload()
                 self.qwen_engine = QwenEngine(active)
                 self.qwen_engine_path = active.local_path
-            result = self.qwen_engine.render(
-                RenderRequest(source=source, prompt=prompt, quality=quality, steps=steps, memory_profile=profile,
-                              width=generation_dimensions[0], height=generation_dimensions[1]),
-                cancel_check=self.render_cancel_event.is_set,
-                progress=lambda done, total: worker.signals.progress.emit(done, total),
-                status=worker.signals.status.emit,
-            )
+
+            def run_engine(size: tuple[int, int]):
+                return self.qwen_engine.render(
+                    RenderRequest(
+                        source=source,
+                        prompt=prompt,
+                        quality=quality,
+                        steps=steps,
+                        memory_profile=profile,
+                        width=size[0],
+                        height=size[1],
+                    ),
+                    cancel_check=self.render_cancel_event.is_set,
+                    progress=lambda done, total: worker.signals.progress.emit(done, total),
+                    status=worker.signals.status.emit,
+                )
+
+            effective_generation = generation_dimensions
+            try:
+                result = run_engine(effective_generation)
+            except InferenceOOMError:
+                retry_dimensions = oom_retry_size(effective_generation)
+                if retry_dimensions == effective_generation or self.render_cancel_event.is_set():
+                    raise
+                self.logger.warning(
+                    "VRAM recovery retry: %sx%s -> %sx%s",
+                    effective_generation[0],
+                    effective_generation[1],
+                    retry_dimensions[0],
+                    retry_dimensions[1],
+                )
+                worker.signals.status.emit(
+                    f"VRAM recovery · retry once at {retry_dimensions[0]}×{retry_dimensions[1]}"
+                )
+                result = run_engine(retry_dimensions)
+                effective_generation = retry_dimensions
+                if self.last_render_request is not None:
+                    self.last_render_request["oom_recovery"] = True
+                    self.last_render_request["generation_dimensions"] = retry_dimensions
+
+            worker.signals.status.emit("Post-processing · exact output size")
             if result.image.size != target_dimensions:
-                result.image = LanczosUpscaleBackend().resize_to(result.image, target_dimensions)
+                result.image = LanczosUpscaleBackend().resize_to(
+                    result.image,
+                    target_dimensions,
+                )
                 result.width, result.height = result.image.size
-                result.metadata["smart_render"] = {
-                    "generation_size": generation_dimensions,
-                    "output_size": target_dimensions,
-                    "profile": profile,
-                }
+            result.metadata["smart_render"] = {
+                "generation_size": effective_generation,
+                "output_size": target_dimensions,
+                "profile": profile,
+            }
+            worker.signals.status.emit("Fidelity check · comparing source and render")
             fidelity = compare_source_and_render(source, result.image)
             return result, fidelity
 
@@ -520,7 +586,16 @@ class MainWindow(DropWindow):
         self.statusBar().showMessage("Cancelling render at the next diffusion step...")
 
     def _render_status(self, message: str) -> None:
-        if message.startswith("Loading Qwen"):
+        indeterminate = message.startswith(
+            (
+                "Loading Qwen",
+                "Preparing image",
+                "Post-processing",
+                "Fidelity check",
+                "VRAM recovery",
+            )
+        )
+        if indeterminate:
             self.progress.setRange(0, 0)
         else:
             steps = int((self.last_render_request or {}).get("steps", 1))
@@ -555,6 +630,7 @@ class MainWindow(DropWindow):
         )
 
     def _render_error(self, message: str) -> None:
+        self.logger.error("Render failed: %s", message)
         self.retry_btn.setEnabled(self.source_image is not None)
         if "cancelled" in message.lower():
             self.statusBar().showMessage("Render cancelled")
