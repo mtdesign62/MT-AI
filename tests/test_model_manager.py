@@ -35,3 +35,34 @@ def test_activate_and_rollback(tmp_path):
     rolled = manager.rollback()
     assert rolled.version == "2.1"
     assert manager.active().version == "2.1"
+
+
+def test_import_existing_from_hf_cache_parent(tmp_path):
+    paths = make_paths(tmp_path / "app")
+    manager = ModelManager(paths=paths, settings=SettingsStore(paths))
+    snapshot = tmp_path / "hub" / "models--Qwen--Qwen-Image-2.1" / "snapshots" / ("a" * 40)
+    snapshot.mkdir(parents=True)
+    (snapshot / "model_index.json").write_text(
+        '{"_class_name":"QwenImage21Pipeline"}', encoding="utf-8"
+    )
+
+    model = manager.import_existing(tmp_path / "hub")
+    assert model.family == "qwen-image"
+    assert Path(model.local_path) == snapshot
+    manager.activate(model)
+    assert manager.active().local_path == str(snapshot)
+
+
+def test_import_existing_prompt_rewriter(tmp_path):
+    paths = make_paths(tmp_path / "app")
+    manager = ModelManager(paths=paths, settings=SettingsStore(paths))
+    snapshot = tmp_path / "Qwen-Image-2.1-PE-I2I"
+    snapshot.mkdir(parents=True)
+    (snapshot / "system_prompt.txt").write_text("rewrite", encoding="utf-8")
+    (snapshot / "config.json").write_text("{}", encoding="utf-8")
+
+    model = manager.import_existing(snapshot)
+    assert model.family == "qwen-image-prompt-rewriter"
+    assert model.repo_id == "Qwen/Qwen-Image-2.1-PE-I2I"
+    manager.activate(model)
+    assert manager.active("qwen-image-prompt-rewriter").local_path == str(snapshot)
