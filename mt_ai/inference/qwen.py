@@ -127,6 +127,7 @@ class QwenEngine:
         request: RenderRequest,
         cancel_check: Callable[[], bool] | None = None,
         progress: Callable[[int, int], None] | None = None,
+        status: Callable[[str], None] | None = None,
     ) -> RenderResult:
         try:
             import torch
@@ -135,8 +136,14 @@ class QwenEngine:
         if cancel_check and cancel_check():
             raise RenderCancelledError("Render cancelled")
         if self.pipe is None or self.loaded_profile != request.memory_profile:
+            if status:
+                status("Loading Qwen Image 2.1 into memory. First render can take several minutes on Low Memory mode...")
             self.unload()
             self.load(request.memory_profile)
+            if status:
+                status("Qwen model loaded. Starting diffusion...")
+        elif status:
+            status("Qwen model already loaded. Starting diffusion...")
 
         width, height = (
             (request.width, request.height)
