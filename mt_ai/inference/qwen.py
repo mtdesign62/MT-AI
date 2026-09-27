@@ -145,6 +145,9 @@ class QwenEngine:
         elif status:
             status("Qwen model already loaded. Starting diffusion...")
 
+        if cancel_check and cancel_check():
+            raise RenderCancelledError("Render cancelled")
+
         width, height = (
             (request.width, request.height)
             if request.width and request.height
