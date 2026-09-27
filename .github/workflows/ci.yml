@@ -131,7 +131,7 @@ jobs:
       - name: Upload Windows executable
         uses: actions/upload-artifact@v4
         with:
-          name: MT-AI-v0.2.3-Windows
+          name: MT-AI-v0.2.4-Windows
           path: dist/MT-AI.exe
           if-no-files-found: error
           retention-days: 30
@@ -148,7 +148,7 @@ jobs:
           Write-Host "Full packaged MT-AI.exe GUI launch smoke passed"
 
 
-  release-v0-2-3:
+  release-v0-2-4:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: [windows-smoke, qwen-api-smoke, full-package-smoke]
     runs-on: ubuntu-latest
@@ -156,25 +156,25 @@ jobs:
       - name: Download bilingual Windows build
         uses: actions/download-artifact@v4
         with:
-          name: MT-AI-v0.2.3-Windows
+          name: MT-AI-v0.2.4-Windows
           path: release
 
-      - name: Publish GitHub Release v0.2.3
+      - name: Publish GitHub Release v0.2.4
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          if gh release view v0.2.3 --repo "${{ github.repository }}" >/dev/null 2>&1; then
-            echo "v0.2.3 already exists"
+          if gh release view v0.2.4 --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            echo "v0.2.4 already exists"
             exit 0
           fi
           # GitHub Release assets are limited to 2 GiB each. The full CUDA EXE
           # remains available as the Actions artifact above; publish the release
           # metadata without trying to upload an oversized single asset.
-          gh release create v0.2.3 \
+          gh release create v0.2.4 \
             --repo "${{ github.repository }}" \
             --target "${{ github.sha }}" \
-            --title "MT AI v0.2.3 — English + Tiếng Việt in one app" \
+            --title "MT AI v0.2.4 — English + Tiếng Việt in one app" \
             --notes "Windows bilingual release of MT AI with CUDA runtime and existing-model import.
 
           Included:
